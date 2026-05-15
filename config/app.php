@@ -19,12 +19,11 @@ return [
         'upload_dir' => storage_path('uploads'),
     ],
     'db' => [
-        'host' => getenv('DB_HOST') ?: '127.0.0.1',
+        'host' => getenv('DB_HOST') ?: 'localhost',
         'port' => (int) (getenv('DB_PORT') ?: 3306),
-        'database' => getenv('DB_DATABASE') ?: 'ootaa2',
-        'username' => getenv('DB_USERNAME') ?: 'root',
-        'password' => getenv('DB_PASSWORD') ?: '',
+        'database' => getenv('DB_DATABASE') ?: 'ootaadb',
+        'username' => getenv('DB_USERNAME') ?: 'ootaadb_user',
+        'password' => getenv('DB_PASSWORD') ?: 'N@199137r',
         'charset' => 'utf8mb4',
     ],
 ];
-

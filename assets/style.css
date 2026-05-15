@@ -65,6 +65,7 @@
 
 html,
 body {
+    height: 100%;
     min-height: 100%;
 }
 
@@ -76,6 +77,7 @@ body {
         radial-gradient(circle at 20% 0%, rgba(0, 96, 57, 0.18), transparent 22%),
         radial-gradient(circle at 100% 90%, rgba(4, 111, 72, 0.16), transparent 20%),
         linear-gradient(180deg, #e6efeb 0%, #dce6e1 100%);
+    overflow: hidden;
 }
 
 button,
@@ -111,14 +113,19 @@ body::before {
 }
 
 .app-frame {
+    height: 100vh;
+    height: 100dvh;
     min-height: 100vh;
+    min-height: 100dvh;
     padding: 0;
+    overflow: hidden;
 }
 
 .app-shell {
-    min-height: 100vh;
-    display: grid;
-    grid-template-rows: auto 1fr;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
     background: var(--app-surface);
     position: relative;
     overflow: hidden;
@@ -157,7 +164,6 @@ body::before {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-inline-start: auto;
 }
 
 .brand-badge,
@@ -186,6 +192,7 @@ body::before {
 }
 
 .screen {
+    flex: 1 1 auto;
     min-height: 0;
 }
 
@@ -504,11 +511,11 @@ h1 {
 }
 
 .screen-chat {
-    display: grid;
-    grid-template-rows: auto auto 1fr auto;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
     min-height: 0;
-    height: 100%;
-    align-self: stretch;
+    overflow: hidden;
 }
 
 .chat-header {
@@ -544,26 +551,36 @@ h1 {
 }
 
 .messages-panel {
+    flex: 1 1 auto;
     min-height: 0;
     padding: 12px 10px 0;
     display: flex;
+    overflow: hidden;
 }
 
 .messages-list {
     flex: 1;
-    height: 100%;
+    min-height: 0;
     overflow-y: auto;
     padding: 8px 6px 18px;
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 12px;
-    align-content: end;
     direction: ltr;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+}
+
+.messages-list > *:first-child {
+    margin-top: auto;
 }
 
 .messages-list::after {
     content: "";
     display: block;
-    height: 4px;
+    min-height: 4px;
+    flex-shrink: 0;
 }
 
 .message-row {
@@ -735,11 +752,11 @@ h1 {
 }
 
 .composer {
+    flex-shrink: 0;
     padding: 8px 12px calc(10px + var(--safe-bottom));
     background: linear-gradient(180deg, rgba(247, 250, 248, 0.76), rgba(247, 250, 248, 0.96));
     border-top: 1px solid rgba(16, 38, 31, 0.08);
     backdrop-filter: blur(16px);
-    margin-top: auto;
 }
 
 .composer-banner {
@@ -995,6 +1012,7 @@ button:disabled {
 
     .app-shell {
         width: min(100%, 430px);
+        height: min(92vh, 880px);
         min-height: min(92vh, 880px);
         max-height: 92vh;
         border-radius: 34px;

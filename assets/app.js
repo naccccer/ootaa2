@@ -180,9 +180,33 @@
             },
             ...options
         });
-        const payload = await response.json();
+        const raw = await response.text();
+        let payload = null;
 
-        if (!response.ok || !payload.ok) {
+        try {
+            payload = raw ? JSON.parse(raw) : null;
+        } catch (error) {
+            const responseType = response.headers.get("content-type") || "";
+            const isHtmlResponse = responseType.includes("text/html") || raw.trim().startsWith("<");
+
+            if (response.status >= 500) {
+                throw new Error("سرور با خطای داخلی پاسخ داد. تنظیمات دیتابیس، import جداول، و خطاهای PHP را بررسی کنید.");
+            }
+
+            if (response.status === 404) {
+                throw new Error("مسیر API پیدا نشد. به احتمال زیاد .htaccess یا rewrite روی هاست درست کار نمی‌کند.");
+            }
+
+            if (!raw) {
+                throw new Error("سرور پاسخ خالی برگرداند. معمولا یعنی PHP قبل از تولید JSON متوقف شده است.");
+            }
+
+            throw new Error(isHtmlResponse
+                ? "سرور به‌جای JSON یک صفحه HTML برگرداند. معمولا مشکل از خطای PHP، .htaccess، یا rewrite است."
+                : "پاسخ API معتبر نیست.");
+        }
+
+        if (!response.ok || !payload?.ok) {
             throw new Error(payload?.error?.message || "درخواست انجام نشد.");
         }
 
@@ -483,6 +507,23 @@
         }
     }
 
+    function getContextTargetFromBubble(bubble) {
+        if (!bubble) {
+            return null;
+        }
+
+        const messageId = Number(bubble.dataset.messageId || 0);
+
+        if (!messageId) {
+            return null;
+        }
+
+        return {
+            messageId,
+            isOwn: bubble.dataset.messageOwn === "1"
+        };
+    }
+
     function confirmAction({ title, text, acceptLabel }) {
         return new Promise((resolve) => {
             dom.confirmDialogTitle.textContent = title;
@@ -574,7 +615,7 @@
 
         return `
             <article class="message-row ${rowClass}${deletedClass}">
-                <div class="message-bubble${hasAttachments ? " has-attachments" : ""}">
+                <div class="message-bubble${hasAttachments ? " has-attachments" : ""}" data-message-id="${message.id}" data-message-own="${message.isOwn ? "1" : "0"}">
                     <div class="message-head">
                         <div class="message-author">${escapeHtml(message.senderName)}</div>
                         <div class="message-time">${formatTime(message.createdAt)}</div>
@@ -871,6 +912,45 @@
     });
     dom.roomCodeInput.addEventListener("input", () => {
         dom.roomCodeInput.value = dom.roomCodeInput.value.replace(/\D+/g, "").slice(0, 4);
+    });
+    dom.messagesList.addEventListener("contextmenu", (event) => {
+        const bubble = event.target.closest(".message-bubble");
+
+        if (!bubble) {
+            return;
+        }
+
+        event.preventDefault();
+        const target = getContextTargetFromBubble(bubble);
+
+        if (target) {
+            showMessageContextMenu(target.messageId, target.isOwn, event.clientX, event.clientY);
+        }
+    });
+    dom.messagesList.addEventListener("pointerdown", (event) => {
+        const bubble = event.target.closest(".message-bubble");
+
+        if (!bubble) {
+            return;
+        }
+
+        if (event.pointerType === "mouse" && event.button !== 0) {
+            return;
+        }
+
+        window.clearTimeout(state.longPressTimer);
+        state.longPressTimer = window.setTimeout(() => {
+            const target = getContextTargetFromBubble(bubble);
+
+            if (target) {
+                showMessageContextMenu(target.messageId, target.isOwn, event.clientX, event.clientY);
+            }
+        }, 450);
+    });
+    ["pointerup", "pointerleave", "pointercancel", "pointermove"].forEach((eventName) => {
+        dom.messagesList.addEventListener(eventName, () => {
+            window.clearTimeout(state.longPressTimer);
+        });
     });
     dom.contextCopyButton.addEventListener("click", async () => {
         const messageId = state.contextMessageId;
