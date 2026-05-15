@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
 $basePath = $scriptName === '' ? '' : rtrim(str_replace('\\', '/', dirname($scriptName)), '/.');
+$httpHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+$isLocalHost = in_array($httpHost, ['localhost', '127.0.0.1'], true) || str_contains($httpHost, 'localhost:') || str_contains($httpHost, '127.0.0.1:');
 
 return [
     'app' => [
@@ -19,11 +21,11 @@ return [
         'upload_dir' => storage_path('uploads'),
     ],
     'db' => [
-        'host' => getenv('DB_HOST') ?: 'localhost',
+        'host' => getenv('DB_HOST') ?: ($isLocalHost ? '127.0.0.1' : 'localhost'),
         'port' => (int) (getenv('DB_PORT') ?: 3306),
-        'database' => getenv('DB_DATABASE') ?: 'ootaadb',
-        'username' => getenv('DB_USERNAME') ?: 'ootaadb_user',
-        'password' => getenv('DB_PASSWORD') ?: 'N@199137r',
+        'database' => getenv('DB_DATABASE') ?: ($isLocalHost ? 'ootaa2' : 'naserz_ootaadb'),
+        'username' => getenv('DB_USERNAME') ?: ($isLocalHost ? 'root' : 'naserz_ootaadb_user'),
+        'password' => getenv('DB_PASSWORD') ?: ($isLocalHost ? '' : 'N@199137r'),
         'charset' => 'utf8mb4',
     ],
 ];
