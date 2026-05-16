@@ -58,7 +58,8 @@ try {
             (string) Request::input('roomCode', ''),
             $browserId,
             is_string(Request::input('text')) ? (string) Request::input('text') : null,
-            Request::uploadedFiles('files')
+            Request::uploadedFiles('files'),
+            Request::input('replyToMessageId')
         ), 201);
     }
 

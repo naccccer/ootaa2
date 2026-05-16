@@ -33,12 +33,33 @@ $basePath = app_base_path();
         <div class="app-shell">
             <aside id="sidebarPanel" class="sidebar">
                 <header class="sidebar-header">
-                    <div class="sidebar-brand">
-                        <div class="sidebar-brand__badge" aria-hidden="true">ا</div>
-                        <div class="sidebar-brand__copy">
-                            <strong>اوتا</strong>
+                    <section class="sidebar-identity sidebar-identity--header" aria-label="نام نمایشی">
+                        <button type="button" id="sidebarIdentityDisplay" class="sidebar-identity__display" aria-label="ویرایش نام نمایشی" title="ویرایش نام نمایشی">
+                            <span id="sidebarIdentityAvatar" class="sidebar-identity__avatar" aria-hidden="true">NA</span>
+                            <span class="sidebar-identity__copy">
+                                <strong id="sidebarIdentityName">بدون نام نمایشی</strong>
+                                <span id="sidebarIdentityHint"></span>
+                            </span>
+                        </button>
+
+                        <div id="sidebarIdentityEditor" class="sidebar-identity__editor" hidden>
+                            <label class="sidebar-identity__field" for="sidebarIdentityInput">
+                                <input id="sidebarIdentityInput" class="sidebar-identity__input" type="text" maxlength="40" autocomplete="nickname" placeholder="نام نمایشی">
+                            </label>
+                            <div class="sidebar-identity__inline-actions">
+                                <button type="button" id="sidebarIdentitySaveButton" class="icon-button soft-button icon-button--sm" aria-label="تایید نام نمایشی" title="تایید">
+                                    <svg viewBox="0 0 24 24" focusable="false">
+                                        <path d="M18.28 7.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L5.72 11.28a.75.75 0 1 1 1.06-1.06l3.72 3.72 6.72-6.72a.75.75 0 0 1 1.06 0Z" />
+                                    </svg>
+                                </button>
+                                <button type="button" id="sidebarIdentityCancelButton" class="icon-button soft-button icon-button--sm" aria-label="لغو ویرایش نام نمایشی" title="لغو">
+                                    <svg viewBox="0 0 24 24" focusable="false">
+                                        <path d="M6.97 6.97a.75.75 0 0 1 1.06 0L12 10.94l3.97-3.97a.75.75 0 1 1 1.06 1.06L13.06 12l3.97 3.97a.75.75 0 1 1-1.06 1.06L12 13.06l-3.97 3.97a.75.75 0 1 1-1.06-1.06L10.94 12 6.97 8.03a.75.75 0 0 1 0-1.06Z" />
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
-                    </div>
+                    </section>
 
                     <div class="sidebar-header__actions">
                         <button type="button" id="openEntryButton" class="icon-button primary-icon-button" aria-label="شروع گفتگو" title="شروع گفتگو">
@@ -49,45 +70,27 @@ $basePath = app_base_path();
                     </div>
                 </header>
 
-                <section class="sidebar-identity" aria-label="نام نمایشی">
-                    <button type="button" id="sidebarIdentityDisplay" class="sidebar-identity__display" aria-label="ویرایش نام نمایشی" title="ویرایش نام نمایشی">
-                        <span id="sidebarIdentityAvatar" class="sidebar-identity__avatar" aria-hidden="true">؟</span>
-                        <span class="sidebar-identity__copy">
-                            <strong id="sidebarIdentityName">بدون نام نمایشی</strong>
-                            <span id="sidebarIdentityHint"></span>
-                        </span>
-                    </button>
-
-                    <div id="sidebarIdentityEditor" class="sidebar-identity__editor" hidden>
-                        <label class="sidebar-identity__field" for="sidebarIdentityInput">
-                            <span id="sidebarIdentityEditorAvatar" class="sidebar-identity__avatar" aria-hidden="true">؟</span>
-                            <input id="sidebarIdentityInput" class="sidebar-identity__input" type="text" maxlength="40" autocomplete="nickname" placeholder="نام نمایشی">
-                        </label>
-                        <div class="sidebar-identity__inline-actions">
-                            <button type="button" id="sidebarIdentitySaveButton" class="icon-button soft-button icon-button--sm" aria-label="تایید نام نمایشی" title="تایید">
-                                <svg viewBox="0 0 24 24" focusable="false">
-                                    <path d="M18.28 7.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L5.72 11.28a.75.75 0 1 1 1.06-1.06l3.72 3.72 6.72-6.72a.75.75 0 0 1 1.06 0Z" />
-                                </svg>
-                            </button>
-                            <button type="button" id="sidebarIdentityCancelButton" class="icon-button soft-button icon-button--sm" aria-label="لغو ویرایش نام نمایشی" title="لغو">
-                                <svg viewBox="0 0 24 24" focusable="false">
-                                    <path d="M6.97 6.97a.75.75 0 0 1 1.06 0L12 10.94l3.97-3.97a.75.75 0 1 1 1.06 1.06L13.06 12l3.97 3.97a.75.75 0 1 1-1.06 1.06L12 13.06l-3.97 3.97a.75.75 0 1 1-1.06-1.06L10.94 12 6.97 8.03a.75.75 0 0 1 0-1.06Z" />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                </section>
-
                 <section class="sidebar-section">
                     <div class="section-row">
                         <div>
                             <h2>گفتگوها</h2>
                         </div>
-                        <button type="button" id="clearRecentRoomsButton" class="icon-button soft-button" aria-label="پاک کردن گفتگوهای اخیر" title="پاک کردن گفتگوهای اخیر">
-                            <svg viewBox="0 0 24 24" focusable="false">
-                                <path d="M9.75 3.5h4.5c.83 0 1.5.67 1.5 1.5V6h3a.75.75 0 0 1 0 1.5h-.72l-.63 10.07A2.5 2.5 0 0 1 14.91 20H9.09a2.5 2.5 0 0 1-2.49-2.43L5.97 7.5H5.25a.75.75 0 0 1 0-1.5h3V5c0-.83.67-1.5 1.5-1.5Zm4.5 2.5V5h-4.5v1h4.5ZM9.5 9.25a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0V10a.75.75 0 0 1 .75-.75Zm5 0a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0V10a.75.75 0 0 1 .75-.75Z" />
-                            </svg>
-                        </button>
+                    </div>
+
+                    <div id="recentRoomsSelectionBar" class="recent-rooms-selection" hidden>
+                        <strong id="recentRoomsSelectionText" class="recent-rooms-selection__text">0 گفتگو انتخاب شده</strong>
+                        <div class="recent-rooms-selection__actions">
+                            <button type="button" id="recentRoomsDeleteButton" class="icon-button soft-button icon-button--sm recent-rooms-selection__button recent-rooms-selection__button--danger" aria-label="حذف گفتگوهای انتخاب‌شده" title="حذف">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M9.75 3.5h4.5c.83 0 1.5.67 1.5 1.5V6h3a.75.75 0 0 1 0 1.5h-.72l-.63 10.07A2.5 2.5 0 0 1 14.91 20H9.09a2.5 2.5 0 0 1-2.49-2.43L5.97 7.5H5.25a.75.75 0 0 1 0-1.5h3V5c0-.83.67-1.5 1.5-1.5Zm4.5 2.5V5h-4.5v1h4.5ZM9.5 9.25a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0V10a.75.75 0 0 1 .75-.75Zm5 0a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0V10a.75.75 0 0 1 .75-.75Z" />
+                                </svg>
+                            </button>
+                            <button type="button" id="recentRoomsCancelSelectionButton" class="icon-button soft-button icon-button--sm recent-rooms-selection__button" aria-label="لغو حالت انتخاب گفتگوها" title="لغو">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M6.97 6.97a.75.75 0 0 1 1.06 0L12 10.94l3.97-3.97a.75.75 0 1 1 1.06 1.06L13.06 12l3.97 3.97a.75.75 0 1 1-1.06 1.06L12 13.06l-3.97 3.97a.75.75 0 1 1-1.06-1.06L10.94 12 6.97 8.03a.75.75 0 0 1 0-1.06Z" />
+                                </svg>
+                            </button>
+                        </div>
                     </div>
 
                     <div id="recentRoomsList" class="recent-rooms-list empty-state"></div>
@@ -196,6 +199,18 @@ $basePath = app_base_path();
                             </button>
                         </div>
 
+                        <div id="replyModeBanner" class="composer-banner composer-banner--reply" hidden>
+                            <div class="composer-banner__copy">
+                                <strong id="replyModeTitle">در حال پاسخ</strong>
+                                <span id="replyModeText">پاسخ به پیام انتخاب‌شده</span>
+                            </div>
+                            <button type="button" id="cancelReplyButton" class="icon-button soft-button" aria-label="لغو پاسخ" title="لغو پاسخ">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M6.97 6.97a.75.75 0 0 1 1.06 0L12 10.94l3.97-3.97a.75.75 0 1 1 1.06 1.06L13.06 12l3.97 3.97a.75.75 0 1 1-1.06 1.06L12 13.06l-3.97 3.97a.75.75 0 1 1-1.06-1.06L10.94 12 6.97 8.03a.75.75 0 0 1 0-1.06Z" />
+                                </svg>
+                            </button>
+                        </div>
+
                         <div class="selected-files" id="selectedFilesList" hidden></div>
 
                         <div id="uploadProgress" class="upload-progress" hidden>
@@ -268,8 +283,8 @@ $basePath = app_base_path();
                     </div>
                 </label>
 
-                <div class="entry-inline-actions">
-                    <button type="button" id="toggleRoomCodeButton" class="entry-link-button" aria-expanded="true" aria-controls="roomCodeGroup">
+                <div class="entry-inline-actions" hidden>
+                    <button type="button" id="toggleRoomCodeButton" class="entry-link-button" aria-expanded="false" aria-controls="roomCodeGroup" hidden>
                         اگر کد داری
                     </button>
                 </div>
@@ -322,6 +337,14 @@ $basePath = app_base_path();
     </dialog>
 
     <div id="messageContextMenu" class="context-menu" hidden>
+        <button type="button" id="contextReplyButton" class="context-menu__item">
+            <span class="context-menu__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M9.53 5.22a.75.75 0 0 1 0 1.06L5.81 10H14a6.25 6.25 0 1 1 0 12.5h-2.5a.75.75 0 0 1 0-1.5H14a4.75 4.75 0 1 0 0-9.5H5.81l3.72 3.72a.75.75 0 1 1-1.06 1.06l-5-5a.75.75 0 0 1 0-1.06l5-5a.75.75 0 0 1 1.06 0Z" />
+                </svg>
+            </span>
+            <span>پاسخ</span>
+        </button>
         <button type="button" id="contextCopyButton" class="context-menu__item">
             <span class="context-menu__icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" focusable="false">
@@ -339,6 +362,49 @@ $basePath = app_base_path();
             <span>ویرایش</span>
         </button>
         <button type="button" id="contextDeleteButton" class="context-menu__item context-menu__item--danger" hidden>
+            <span class="context-menu__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M9.75 3.5h4.5c.83 0 1.5.67 1.5 1.5V6h3a.75.75 0 0 1 0 1.5h-.72l-.63 10.07A2.5 2.5 0 0 1 14.91 20H9.09a2.5 2.5 0 0 1-2.49-2.43L5.97 7.5H5.25a.75.75 0 0 1 0-1.5h3V5c0-.83.67-1.5 1.5-1.5Zm4.5 2.5V5h-4.5v1h4.5ZM9.5 9.25a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0V10a.75.75 0 0 1 .75-.75Zm5 0a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0V10a.75.75 0 0 1 .75-.75Z" />
+                </svg>
+            </span>
+            <span>حذف</span>
+        </button>
+    </div>
+
+    <div id="chatContextMenu" class="context-menu" hidden>
+        <button type="button" id="chatContextPinButton" class="context-menu__item">
+            <span class="context-menu__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M14.78 4.72a.75.75 0 0 1 1.06 0l3.44 3.44a.75.75 0 0 1 0 1.06l-1.97 1.97v2.27a.75.75 0 0 1-.22.53l-2.5 2.5a.75.75 0 0 1-.53.22h-1.77l-4.76 4.76a.75.75 0 0 1-1.06-1.06l4.76-4.76V13.9a.75.75 0 0 1 .22-.53l2.5-2.5a.75.75 0 0 1 .53-.22h2.27l1.97-1.97a.75.75 0 0 1 1.06 0ZM14.8 12.15h-1.76l-2.06 2.06v1.76l5.81-5.81V8.4l-2 2a.75.75 0 0 1-.53.22Z" />
+                </svg>
+            </span>
+            <span>سنجاق</span>
+        </button>
+        <button type="button" id="chatContextSelectButton" class="context-menu__item">
+            <span class="context-menu__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M5.75 4A2.75 2.75 0 0 0 3 6.75v10.5A2.75 2.75 0 0 0 5.75 20h12.5A2.75 2.75 0 0 0 21 17.25V6.75A2.75 2.75 0 0 0 18.25 4H5.75Zm0 1.5h12.5c.69 0 1.25.56 1.25 1.25v10.5c0 .69-.56 1.25-1.25 1.25H5.75c-.69 0-1.25-.56-1.25-1.25V6.75c0-.69.56-1.25 1.25-1.25Zm2.97 5.47a.75.75 0 0 1 1.06 0l1.72 1.72 3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0l-2.25-2.25a.75.75 0 0 1 0-1.06Z" />
+                </svg>
+            </span>
+            <span>انتخاب</span>
+        </button>
+        <button type="button" id="chatContextRenameButton" class="context-menu__item">
+            <span class="context-menu__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M15.12 4.47a2.25 2.25 0 0 1 3.18 3.18L9.56 16.39l-3.98.8.8-3.98 8.74-8.74Zm1.06 1.06-8.39 8.39-.37 1.83 1.83-.37 8.39-8.39a.75.75 0 1 0-1.06-1.06Z" />
+                </svg>
+            </span>
+            <span>تغییر نام</span>
+        </button>
+        <button type="button" id="chatContextCopyLinkButton" class="context-menu__item">
+            <span class="context-menu__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M9.25 4A2.25 2.25 0 0 0 7 6.25v8.5A2.25 2.25 0 0 0 9.25 17h8.5A2.25 2.25 0 0 0 20 14.75v-8.5A2.25 2.25 0 0 0 17.75 4h-8.5Zm-4 3A2.25 2.25 0 0 0 3 9.25v8.5A2.25 2.25 0 0 0 5.25 20h8.5A2.25 2.25 0 0 0 16 17.75v-.5h-1.5v.5a.75.75 0 0 1-.75.75h-8.5a.75.75 0 0 1-.75-.75v-8.5a.75.75 0 0 1 .75-.75h.5V7h-.5Z" />
+                </svg>
+            </span>
+            <span>کپی لینک</span>
+        </button>
+        <button type="button" id="chatContextDeleteButton" class="context-menu__item context-menu__item--danger">
             <span class="context-menu__icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" focusable="false">
                     <path d="M9.75 3.5h4.5c.83 0 1.5.67 1.5 1.5V6h3a.75.75 0 0 1 0 1.5h-.72l-.63 10.07A2.5 2.5 0 0 1 14.91 20H9.09a2.5 2.5 0 0 1-2.49-2.43L5.97 7.5H5.25a.75.75 0 0 1 0-1.5h3V5c0-.83.67-1.5 1.5-1.5Zm4.5 2.5V5h-4.5v1h4.5ZM9.5 9.25a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0V10a.75.75 0 0 1 .75-.75Zm5 0a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0V10a.75.75 0 0 1 .75-.75Z" />

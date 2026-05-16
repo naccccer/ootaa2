@@ -33,11 +33,13 @@ CREATE TABLE IF NOT EXISTS messages (
     browser_id CHAR(64) NOT NULL,
     sender_display_name VARCHAR(50) NOT NULL,
     body_text TEXT NULL,
+    parent_message_id BIGINT UNSIGNED NULL,
     created_at DATETIME(6) NOT NULL,
     updated_at DATETIME(6) NOT NULL,
     deleted_at DATETIME(6) NULL,
     KEY messages_room_updated_index (room_id, updated_at),
     KEY messages_browser_index (browser_id),
+    KEY messages_parent_message_index (parent_message_id),
     CONSTRAINT messages_room_fk
         FOREIGN KEY (room_id) REFERENCES rooms (id)
         ON DELETE CASCADE,

@@ -195,6 +195,15 @@ try {
     assert_true(count($pollTwo['messages']) >= 1, 'Second participant did not receive the new message.');
     assert_true(($pollTwo['presence']['onlineCount'] ?? 0) >= 2, 'Polling should return presence data.');
 
+    $reply = requestJson('POST', $baseUrl . '/api/room/messages', $cookieTwo, [
+        'multipart' => [
+            'roomCode' => $roomCode,
+            'text' => 'reply text',
+            'replyToMessageId' => (string) $messageId,
+        ],
+    ]);
+    assert_true(($reply['message']['replyTo']['id'] ?? null) === $messageId, 'Reply should reference the original message.');
+
     $edit = requestJson('PATCH', $baseUrl . '/api/messages/' . $messageId, $cookieOne, [
         'json' => ['text' => 'edited text'],
     ]);

@@ -126,7 +126,7 @@ class RoomService
         ];
     }
 
-    public function sendMessage(string $roomCode, string $browserId, ?string $bodyText, array $files): array
+    public function sendMessage(string $roomCode, string $browserId, ?string $bodyText, array $files, mixed $replyToMessageId = null): array
     {
         $membership = $this->requireMembership($roomCode, $browserId);
         $participant = $membership['participant'];
@@ -134,6 +134,7 @@ class RoomService
 
         $bodyText = $this->sanitizeMessageText($bodyText);
         $files = $this->filterUploadEntries($files);
+        $replyToId = $this->sanitizeReplyToMessageId($replyToMessageId, (int) $room['id']);
 
         if ($bodyText === null && $files === []) {
             throw new ApiException('برای ارسال پیام باید متن یا فایل داشته باشید.', 422);
@@ -146,8 +147,8 @@ class RoomService
 
             $now = $this->now();
             $statement = $this->pdo->prepare(
-                'INSERT INTO messages (room_id, participant_id, browser_id, sender_display_name, body_text, created_at, updated_at)
-                 VALUES (:room_id, :participant_id, :browser_id, :sender_display_name, :body_text, :created_at, :updated_at)'
+                'INSERT INTO messages (room_id, participant_id, browser_id, sender_display_name, body_text, parent_message_id, created_at, updated_at)
+                 VALUES (:room_id, :participant_id, :browser_id, :sender_display_name, :body_text, :parent_message_id, :created_at, :updated_at)'
             );
             $statement->execute([
                 'room_id' => (int) $room['id'],
@@ -155,6 +156,7 @@ class RoomService
                 'browser_id' => $browserId,
                 'sender_display_name' => $participant['displayName'],
                 'body_text' => $bodyText,
+                'parent_message_id' => $replyToId,
                 'created_at' => $now,
                 'updated_at' => $now,
             ]);
@@ -721,10 +723,11 @@ class RoomService
             return [];
         }
 
+        $replyTargets = $this->loadReplyTargets($messages);
         $messageIds = array_map(static fn (array $message): int => (int) $message['id'], $messages);
         $attachments = $this->loadAttachmentsForMessageIds($messageIds);
 
-        return array_map(function (array $message) use ($attachments, $browserId): array {
+        return array_map(function (array $message) use ($attachments, $browserId, $replyTargets): array {
             $messageId = (int) $message['id'];
 
             return [
@@ -737,6 +740,7 @@ class RoomService
                 'isEdited' => $message['updated_at'] !== $message['created_at'] && $message['deleted_at'] === null,
                 'isDeleted' => $message['deleted_at'] !== null,
                 'isOwn' => $browserId !== null && hash_equals($message['browser_id'], $browserId),
+                'replyTo' => isset($replyTargets[$messageId]) ? $this->serializeReplyTarget($replyTargets[$messageId]) : null,
                 'attachments' => array_map(fn (array $attachment): array => $this->serializeAttachment($attachment), $attachments[$messageId] ?? []),
             ];
         }, $messages);
@@ -752,6 +756,7 @@ class RoomService
             throw new ApiException('پیام پیدا نشد.', 404);
         }
 
+        $replyTargets = $this->loadReplyTargets([$message]);
         $attachments = $this->loadAttachmentsForMessageIds([$messageId]);
 
         return [
@@ -764,7 +769,61 @@ class RoomService
             'isEdited' => $message['updated_at'] !== $message['created_at'] && $message['deleted_at'] === null,
             'isDeleted' => $message['deleted_at'] !== null,
             'isOwn' => $browserId !== null && hash_equals($message['browser_id'], $browserId),
+            'replyTo' => isset($replyTargets[$messageId]) ? $this->serializeReplyTarget($replyTargets[$messageId]) : null,
             'attachments' => array_map(fn (array $attachment): array => $this->serializeAttachment($attachment), $attachments[$messageId] ?? []),
+        ];
+    }
+
+    private function loadReplyTargets(array $messages): array
+    {
+        $parentMap = [];
+        $parentIds = [];
+
+        foreach ($messages as $message) {
+            $messageId = (int) ($message['id'] ?? 0);
+            $parentId = isset($message['parent_message_id']) ? (int) $message['parent_message_id'] : 0;
+
+            if ($messageId > 0 && $parentId > 0) {
+                $parentMap[$messageId] = $parentId;
+                $parentIds[] = $parentId;
+            }
+        }
+
+        if ($parentIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($parentIds), '?'));
+        $statement = $this->pdo->prepare(
+            "SELECT id, sender_display_name, body_text, deleted_at
+             FROM messages
+             WHERE id IN ($placeholders)"
+        );
+        $statement->execute(array_values(array_unique($parentIds)));
+        $parents = [];
+
+        foreach ($statement->fetchAll() as $row) {
+            $parents[(int) $row['id']] = $row;
+        }
+
+        $resolved = [];
+
+        foreach ($parentMap as $messageId => $parentId) {
+            if (isset($parents[$parentId])) {
+                $resolved[$messageId] = $parents[$parentId];
+            }
+        }
+
+        return $resolved;
+    }
+
+    private function serializeReplyTarget(array $message): array
+    {
+        return [
+            'id' => (int) $message['id'],
+            'senderName' => (string) $message['sender_display_name'],
+            'bodyText' => $message['body_text'],
+            'isDeleted' => $message['deleted_at'] !== null,
         ];
     }
 
@@ -940,6 +999,11 @@ class RoomService
             $this->pdo->exec('ALTER TABLE rooms ADD KEY rooms_creator_browser_index (creator_browser_id)');
         }
 
+        if (!$this->columnExists('messages', 'parent_message_id')) {
+            $this->pdo->exec('ALTER TABLE messages ADD COLUMN parent_message_id BIGINT UNSIGNED NULL AFTER body_text');
+            $this->pdo->exec('ALTER TABLE messages ADD KEY messages_parent_message_index (parent_message_id)');
+        }
+
         $this->pdo->exec(
             'UPDATE rooms
              INNER JOIN (
@@ -958,6 +1022,34 @@ class RoomService
         );
 
         self::$schemaEnsured = true;
+    }
+
+    private function sanitizeReplyToMessageId(mixed $value, int $roomId): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (!is_scalar($value) || !preg_match('/^\d+$/', (string) $value)) {
+            throw new ApiException('پیام مرجع معتبر نیست.', 422);
+        }
+
+        $messageId = (int) $value;
+        $statement = $this->pdo->prepare(
+            'SELECT id
+             FROM messages
+             WHERE id = :id AND room_id = :room_id'
+        );
+        $statement->execute([
+            'id' => $messageId,
+            'room_id' => $roomId,
+        ]);
+
+        if ($statement->fetchColumn() === false) {
+            throw new ApiException('پیام مرجع پیدا نشد.', 404);
+        }
+
+        return $messageId;
     }
 
     private function columnExists(string $table, string $column): bool
