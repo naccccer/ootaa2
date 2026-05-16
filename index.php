@@ -279,7 +279,7 @@ $basePath = app_base_path();
                                 <path d="M12 12.75a4.13 4.13 0 1 0 0-8.25 4.13 4.13 0 0 0 0 8.25Zm0 2.25c-4.17 0-7.5 2.1-7.5 4.69 0 .45.37.81.82.81h13.36c.45 0 .82-.36.82-.81 0-2.6-3.33-4.69-7.5-4.69Z" />
                             </svg>
                         </span>
-                        <input id="displayNameInput" name="displayName" type="text" maxlength="40" autocomplete="nickname" placeholder="مثلاً نازنین">
+                        <input id="displayNameInput" name="displayName" type="text" maxlength="40" autocomplete="nickname" placeholder="مثلاً علی">
                     </div>
                 </label>
 
