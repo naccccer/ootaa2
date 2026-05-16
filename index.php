@@ -17,9 +17,16 @@ $basePath = app_base_path();
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>اوتا | گفت‌وگوی خصوصی</title>
-    <link rel="stylesheet" href="<?= htmlspecialchars(app_url('assets/style.css'), ENT_QUOTES, 'UTF-8') ?>">
+    <meta name="theme-color" content="#006039">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="manifest" href="<?= htmlspecialchars(asset_url('manifest.webmanifest'), ENT_QUOTES, 'UTF-8') ?>">
+    <link rel="icon" href="<?= htmlspecialchars(asset_url('public/pwa/icon.svg'), ENT_QUOTES, 'UTF-8') ?>" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="<?= htmlspecialchars(asset_url('public/pwa/icon-192.png'), ENT_QUOTES, 'UTF-8') ?>">
+    <link rel="preload" href="<?= htmlspecialchars(asset_url('public/fonts/Vazir-Regular-FD.woff2'), ENT_QUOTES, 'UTF-8') ?>" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="<?= htmlspecialchars(asset_url('assets/style.css'), ENT_QUOTES, 'UTF-8') ?>">
 </head>
-<body>
+<body class="app-loading">
     <div class="app-backdrop"></div>
 
     <div class="app-frame">
@@ -116,6 +123,10 @@ $basePath = app_base_path();
                 <div id="chatStatus" class="status-banner status-banner--floating" hidden></div>
 
                 <section class="messages-panel">
+                    <button type="button" id="jumpToLatestButton" class="jump-to-latest" hidden>
+                        <span id="jumpToLatestCount">0</span>
+                        <span>Ù¾ÛŒØ§Ù… Ø¬Ø¯ÛŒØ¯</span>
+                    </button>
                     <div id="messagesList" class="messages-list"></div>
                 </section>
 
@@ -133,6 +144,16 @@ $basePath = app_base_path();
                     </div>
 
                     <div class="selected-files" id="selectedFilesList" hidden></div>
+
+                    <div id="uploadProgress" class="upload-progress" hidden>
+                        <div class="upload-progress__head">
+                            <strong id="uploadProgressLabel">Ø¯Ø± Ø­Ø§Ù„ Ø§Ø±Ø³Ø§Ù„...</strong>
+                            <span id="uploadProgressPercent">0%</span>
+                        </div>
+                        <div class="upload-progress__track" aria-hidden="true">
+                            <div id="uploadProgressBar" class="upload-progress__bar"></div>
+                        </div>
+                    </div>
 
                     <div class="composer-box">
                         <label class="composer-input">
@@ -208,9 +229,12 @@ $basePath = app_base_path();
     <script>
         window.OOTAA_APP = {
             basePath: <?= json_encode($basePath, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
-            initialRoom: <?= json_encode($initialRoom, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
+            initialRoom: <?= json_encode($initialRoom, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            assets: {
+                serviceWorker: <?= json_encode(asset_url('sw.js'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
+            }
         };
     </script>
-    <script src="<?= htmlspecialchars(app_url('assets/app.js'), ENT_QUOTES, 'UTF-8') ?>" defer></script>
+    <script src="<?= htmlspecialchars(asset_url('assets/app.js'), ENT_QUOTES, 'UTF-8') ?>" defer></script>
 </body>
 </html>

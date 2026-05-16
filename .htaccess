@@ -13,3 +13,31 @@ RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
 RewriteRule ^$ index.php [L]
+
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType application/manifest+json "access plus 1 day"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+</IfModule>
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(css|js|woff2|svg|png)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+
+    <FilesMatch "^(index\.php|api\.php|download\.php)$">
+        Header set Cache-Control "no-store, no-cache, must-revalidate"
+    </FilesMatch>
+
+    <Files "manifest.webmanifest">
+        Header set Cache-Control "public, max-age=86400"
+    </Files>
+
+    <Files "sw.js">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </Files>
+</IfModule>

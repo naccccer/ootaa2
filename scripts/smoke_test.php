@@ -144,9 +144,11 @@ try {
             'roomCode' => $roomCode,
         ],
     ]);
+    assert_true(($enterTwo['presence']['onlineCount'] ?? 0) >= 2, 'Presence should include both participants after join.');
 
     $bootstrap = requestJson('GET', $baseUrl . '/api/room/bootstrap?code=' . urlencode($roomCode), $cookieOne);
     assert_true($bootstrap['room']['code'] === $roomCode, 'Bootstrap returned the wrong room.');
+    assert_true(($bootstrap['presence']['onlineCount'] ?? 0) >= 2, 'Bootstrap should return presence data.');
 
     $pngPath = $tempDir . DIRECTORY_SEPARATOR . 'smoke.png';
     $textPath = $tempDir . DIRECTORY_SEPARATOR . 'smoke.txt';
@@ -172,11 +174,13 @@ try {
 
     $pollTwo = requestJson('GET', $baseUrl . '/api/room/messages?code=' . urlencode($roomCode), $cookieTwo);
     assert_true(count($pollTwo['messages']) >= 1, 'Second participant did not receive the new message.');
+    assert_true(($pollTwo['presence']['onlineCount'] ?? 0) >= 2, 'Polling should return presence data.');
 
     $edit = requestJson('PATCH', $baseUrl . '/api/messages/' . $messageId, $cookieOne, [
         'json' => ['text' => 'edited text'],
     ]);
     assert_true($edit['message']['bodyText'] === 'edited text', 'Edited text was not saved.');
+    assert_true(($edit['presence']['onlineCount'] ?? 0) >= 1, 'Edit should return presence data.');
 
     $downloadAllowed = request('GET', absoluteUrl($baseUrl, $imageAttachment['url']), $cookieTwo);
     $downloadBlocked = request('GET', absoluteUrl($baseUrl, $downloadAttachment['url']));
@@ -192,6 +196,7 @@ try {
         'json' => [],
     ]);
     assert_true($deleteOwn['message']['isDeleted'] === true, 'Own delete should mark the message as deleted.');
+    assert_true(($deleteOwn['presence']['onlineCount'] ?? 0) >= 1, 'Delete should return presence data.');
 
     $cleanupRoom = requestJson('POST', $baseUrl . '/api/room/enter', $cookieOne, [
         'json' => [
@@ -233,6 +238,7 @@ try {
         'messageId' => $messageId,
         'attachmentCount' => count($send['message']['attachments']),
         'secondParticipantMessages' => count($pollTwo['messages']),
+        'presenceCount' => $bootstrap['presence']['onlineCount'] ?? 0,
         'cleanupRemovedRooms' => $removedRooms,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
 } catch (Throwable $throwable) {

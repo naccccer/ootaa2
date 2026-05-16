@@ -53,6 +53,7 @@ class RoomService
         return [
             'room' => $this->serializeRoom($room),
             'participant' => $participant,
+            'presence' => $this->presenceForRoom((int) $room['id']),
         ];
     }
 
@@ -67,6 +68,7 @@ class RoomService
             'participant' => $membership['participant'],
             'messages' => $messages,
             'syncCursor' => $this->resolveSyncCursor($messages),
+            'presence' => $this->presenceForRoom((int) $room['id']),
         ];
     }
 
@@ -80,6 +82,7 @@ class RoomService
         return [
             'messages' => $messages,
             'syncCursor' => $this->resolveSyncCursor($messages, $since),
+            'presence' => $this->presenceForRoom($roomId),
         ];
     }
 
@@ -129,6 +132,7 @@ class RoomService
             return [
                 'message' => $this->loadMessageById($messageId, $browserId),
                 'room' => $this->serializeRoom($this->requireRoomById((int) $room['id'])),
+                'presence' => $this->presenceForRoom((int) $room['id']),
             ];
         } catch (Throwable $throwable) {
             if ($this->pdo->inTransaction()) {
@@ -153,6 +157,7 @@ class RoomService
     {
         $bodyText = $this->sanitizeMessageText($bodyText);
         $message = $this->requireOwnedMessage($messageId, $browserId);
+        $this->touchParticipant((int) $message['room_id'], $browserId);
 
         if ($bodyText === null && (int) $message['attachment_count'] === 0) {
             throw new ApiException('پیامی که فایل ندارد نمی‌تواند کاملا خالی شود.', 422);
@@ -172,6 +177,7 @@ class RoomService
 
         return [
             'message' => $this->loadMessageById($messageId, $browserId),
+            'presence' => $this->presenceForRoom((int) $message['room_id']),
         ];
     }
 
@@ -179,6 +185,7 @@ class RoomService
     {
         $this->purgeExpiredRooms();
         $message = $this->requireOwnedMessage($messageId, $browserId);
+        $this->touchParticipant((int) $message['room_id'], $browserId);
         $attachments = $this->loadAttachmentsForMessageIds([$messageId]);
         $now = $this->now();
 
@@ -223,6 +230,7 @@ class RoomService
 
         return [
             'message' => $this->loadMessageById($messageId, $browserId),
+            'presence' => $this->presenceForRoom((int) $message['room_id']),
         ];
     }
 
@@ -372,13 +380,8 @@ class RoomService
             throw new ApiException('ابتدا باید وارد اتاق شوید.', 403);
         }
 
-        $touchStatement = $this->pdo->prepare(
-            'UPDATE participants SET last_seen_at = :last_seen_at WHERE id = :id'
-        );
-        $touchStatement->execute([
-            'last_seen_at' => $this->now(),
-            'id' => (int) $participant['id'],
-        ]);
+        $now = $this->now();
+        $this->touchParticipant((int) $room['id'], $browserId, $now);
 
         return [
             'room' => $room,
@@ -386,7 +389,7 @@ class RoomService
                 'id' => (int) $participant['id'],
                 'displayName' => $participant['display_name'],
                 'joinedAt' => $participant['joined_at'],
-                'lastSeenAt' => $participant['last_seen_at'],
+                'lastSeenAt' => $now,
             ],
         ];
     }
@@ -426,6 +429,48 @@ class RoomService
             'displayName' => $participant['display_name'],
             'joinedAt' => $participant['joined_at'],
             'lastSeenAt' => $participant['last_seen_at'],
+        ];
+    }
+
+    private function touchParticipant(int $roomId, string $browserId, ?string $now = null): void
+    {
+        $now ??= $this->now();
+        $statement = $this->pdo->prepare(
+            'UPDATE participants
+             SET last_seen_at = :last_seen_at
+             WHERE room_id = :room_id AND browser_id = :browser_id'
+        );
+        $statement->execute([
+            'last_seen_at' => $now,
+            'room_id' => $roomId,
+            'browser_id' => $browserId,
+        ]);
+    }
+
+    private function presenceForRoom(int $roomId): array
+    {
+        $threshold = (new DateTimeImmutable('now'))
+            ->sub(new DateInterval('PT45S'))
+            ->format('Y-m-d H:i:s.u');
+
+        $statement = $this->pdo->prepare(
+            'SELECT display_name
+             FROM participants
+             WHERE room_id = :room_id AND last_seen_at >= :threshold
+             ORDER BY last_seen_at DESC, id ASC'
+        );
+        $statement->execute([
+            'room_id' => $roomId,
+            'threshold' => $threshold,
+        ]);
+        $rows = $statement->fetchAll();
+
+        return [
+            'onlineCount' => count($rows),
+            'participants' => array_map(
+                static fn (array $row): string => (string) $row['display_name'],
+                array_slice($rows, 0, 2)
+            ),
         ];
     }
 

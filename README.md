@@ -1,323 +1,266 @@
-# اوتا
+# Ootaa
 
-اوتا یک ابزار گفت‌وگوی خصوصی و سبک برای جمع‌های کوچک است. کاربر فقط یک نام نمایشی وارد می‌کند، بعد یا با کد ۴ رقمی وارد اتاق می‌شود یا اگر کد را خالی بگذارد یک اتاق جدید برایش ساخته می‌شود.
+Ootaa is a lightweight private chat app for small groups. A user only needs a display name. They can either join an existing room with a 4-digit code or leave the code empty to create a new room.
 
-ویژگی‌های نسخه فعلی:
+## Current Features
 
-- رابط فارسی و راست‌به‌چپ
-- بدون ثبت‌نام و بدون ادمین
-- حفظ مالکیت پیام‌ها با همان مرورگر بعد از رفرش
-- ارسال متن و چند فایل در یک پیام
-- پیش‌نمایش تصویر، صدا و ویدیو
-- دانلود امن برای فایل‌های دیگر
-- ویرایش و حذف فقط برای پیام‌های خود کاربر
-- انقضای اتاق‌ها و فایل‌ها بعد از ۳ روز
+- Persian RTL interface
+- No signup and no admin panel
+- Message ownership is tied to the same browser after refresh
+- Send text and multiple files in one message
+- Inline preview for images, audio, and video when possible
+- Secure download flow for non-inline files
+- Edit and delete only your own messages
+- Upload progress for media and file sends
+- Lightweight presence indicator in the room header
+- Rooms and files expire after 3 days
+- Installable PWA with a cached app shell
 
-## معماری خیلی ساده
+When a message is deleted, it is removed from the visible chat timeline for participants.
 
-- بک‌اند: `PHP 8.3`
-- دیتابیس: `MariaDB / MySQL`
-- فرانت‌اند: `HTML + CSS + vanilla JavaScript`
-- ذخیره فایل: روی دیسک سرور داخل `storage/uploads`
-- محافظت فایل: فایل‌ها مستقیم public نیستند و فقط از مسیر `GET /file/{id}` با بررسی عضویت اتاق سرو می‌شوند
-- همگام‌سازی پیام‌ها: polling ساده
+## Stack
 
-ساختار اصلی:
+- Backend: `PHP 8.3`
+- Database: `MariaDB / MySQL`
+- Frontend: `HTML + CSS + vanilla JavaScript`
+- File storage: `storage/uploads`
+- File protection: attachments are not public; they are served through `GET /file/{id}` after room membership is checked
+- Message sync: simple polling
 
-- [index.php](/c:/xampp/htdocs/ootaa2/index.php) صفحه اصلی و رابط کاربری
-- [api.php](/c:/xampp/htdocs/ootaa2/api.php) روتر API
-- [download.php](/c:/xampp/htdocs/ootaa2/download.php) دانلود امن فایل‌ها
-- [src/Support/RoomService.php](/c:/xampp/htdocs/ootaa2/src/Support/RoomService.php) منطق اتاق، پیام، فایل و cleanup
-- [database/schema.sql](/c:/xampp/htdocs/ootaa2/database/schema.sql) ساخت جدول‌ها
-- [scripts/init_db.php](/c:/xampp/htdocs/ootaa2/scripts/init_db.php) آماده‌سازی دیتابیس
-- [scripts/cleanup.php](/c:/xampp/htdocs/ootaa2/scripts/cleanup.php) حذف اتاق‌ها و فایل‌های منقضی
-- [scripts/smoke_test.php](/c:/xampp/htdocs/ootaa2/scripts/smoke_test.php) تست خودکار end-to-end
+## Main Files
 
-## راه‌اندازی محلی
+- [index.php](/c:/xampp/htdocs/ootaa2/index.php): main page and UI shell
+- [api.php](/c:/xampp/htdocs/ootaa2/api.php): API router
+- [download.php](/c:/xampp/htdocs/ootaa2/download.php): secure attachment download
+- [src/Support/RoomService.php](/c:/xampp/htdocs/ootaa2/src/Support/RoomService.php): room, message, file, presence, and cleanup logic
+- [database/schema.sql](/c:/xampp/htdocs/ootaa2/database/schema.sql): database schema
+- [scripts/init_db.php](/c:/xampp/htdocs/ootaa2/scripts/init_db.php): schema bootstrap script
+- [scripts/cleanup.php](/c:/xampp/htdocs/ootaa2/scripts/cleanup.php): expired room and file cleanup
+- [scripts/smoke_test.php](/c:/xampp/htdocs/ootaa2/scripts/smoke_test.php): end-to-end smoke test
+- [manifest.webmanifest](/c:/xampp/htdocs/ootaa2/manifest.webmanifest): PWA manifest
+- [sw.js](/c:/xampp/htdocs/ootaa2/sw.js): service worker for app-shell caching
 
-این مراحل را در `PowerShell` اجرا کنید.
+## Local Setup
 
-### 1. Apache را اجرا کنید
+Run the following steps in PowerShell.
 
-چرا لازم است:
-چون رابط وب و API از طریق Apache سرو می‌شوند.
-
-دستور:
+### 1. Start Apache
 
 ```powershell
 C:\xampp\apache_start.bat
 ```
 
-نتیجه مورد انتظار:
+Expected result:
 
-- اگر Apache خاموش باشد، شروع می‌شود.
-- اگر از قبل روشن باشد، ممکن است پیغام مشابه `Apache is starting` یا خطای اشغال بودن پورت 80 ببینید. اگر Process مربوط به `httpd.exe` در حال اجرا باشد، یعنی Apache روشن است.
+- If Apache is stopped, it starts.
+- If it is already running, you may see a startup message or a port warning. If `httpd.exe` is already active, Apache is available.
 
-### 2. MariaDB را اجرا کنید
-
-چرا لازم است:
-چون اتاق‌ها، پیام‌ها و فایل‌ها داخل دیتابیس ثبت می‌شوند.
-
-دستور:
+### 2. Start MariaDB / MySQL
 
 ```powershell
 C:\xampp\mysql_start.bat
 ```
 
-نتیجه مورد انتظار:
+Expected result:
 
-- اگر MySQL خاموش باشد، شروع می‌شود.
-- اگر از قبل روشن باشد، ممکن است پیام خطا ببینید ولی اگر process مربوط به `mysqld.exe` فعال باشد مشکلی نیست.
+- If MySQL is stopped, it starts.
+- If it is already running, a warning is acceptable as long as `mysqld.exe` is active.
 
-### 3. دیتابیس را بسازید
-
-چرا لازم است:
-چون برنامه به دیتابیسی به نام `ootaa2` وصل می‌شود.
-
-دستور:
+### 3. Create the database
 
 ```powershell
 C:\xampp\mysql\bin\mysql.exe -u root -e "CREATE DATABASE IF NOT EXISTS ootaa2 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 ```
 
-محل اجرا:
+Expected result:
 
-- همان PowerShell
+- Usually no output if the command succeeds.
 
-نتیجه مورد انتظار:
+### 4. Create the tables
 
-- اگر موفق باشد معمولا خروجی خاصی ندارد.
-
-### 4. جدول‌ها را بسازید
-
-چرا لازم است:
-چون فقط ساختن دیتابیس کافی نیست و جدول‌ها هم باید ایجاد شوند.
-
-دستور:
+Run this inside the project directory `C:\xampp\htdocs\ootaa2`:
 
 ```powershell
 C:\xampp\php\php.exe scripts\init_db.php
 ```
 
-محل اجرا:
-
-- داخل پوشه پروژه: `C:\xampp\htdocs\ootaa2`
-
-نتیجه مورد انتظار:
+Expected result:
 
 ```text
 Database schema is ready.
 ```
 
-### 5. برنامه را باز کنید
-
-آدرس:
+### 5. Open the app
 
 ```text
 http://localhost/ootaa2/
 ```
 
-## نکته مهم درباره PHP
+## Important PHP Note
 
-روی این سیستم، دستور `php` از فایل تنظیمات دیگری استفاده می‌کند. برای همین برای تمام کارهای CLI این پروژه بهتر است از این دستور استفاده کنید:
+On this machine, the plain `php` command may point to a different configuration. For all CLI work in this project, prefer:
 
 ```powershell
 C:\xampp\php\php.exe
 ```
 
-## تنظیمات دیتابیس
+## Database Configuration
 
-پیش‌فرض‌های محلی در [config/app.php](/c:/xampp/htdocs/ootaa2/config/app.php) تعریف شده‌اند:
+Local defaults are defined in [config/app.php](/c:/xampp/htdocs/ootaa2/config/app.php):
 
 - `DB_HOST=127.0.0.1`
 - `DB_PORT=3306`
 - `DB_DATABASE=ootaa2`
 - `DB_USERNAME=root`
-- `DB_PASSWORD=` خالی
+- `DB_PASSWORD=` empty
 
-اگر روی سرور واقعی نام کاربری و رمز عبور دیگری دارید، یا environment variable تنظیم کنید یا همین فایل را برای سرور خودتان تغییر دهید.
+For a real server, set environment variables or adjust the config to match your deployment environment.
 
-## تست سریع خودکار
+## Smoke Test
 
-این تست کل جریان اصلی را بررسی می‌کند:
+This checks the core flow:
 
-- ساخت اتاق
-- ورود مرورگر دوم
-- ارسال متن و دو فایل
-- ویرایش پیام
-- جلوگیری از حذف توسط مرورگر دیگر
-- حذف توسط صاحب پیام
-- بررسی دسترسی فایل
-- cleanup اتاق منقضی
+- create a room
+- join from a second browser session
+- send text plus two attachments
+- edit a message
+- block deletion from a different browser
+- delete as the owner
+- verify attachment access control
+- clean up an expired room
 
-دستور:
+Run:
 
 ```powershell
 C:\xampp\php\php.exe scripts\smoke_test.php
 ```
 
-نتیجه مورد انتظار:
-
-خروجی JSON با `ok: true`، شبیه این:
+Expected result:
 
 ```json
-{"ok":true,"roomCode":"7642","messageId":5,"attachmentCount":2,"secondParticipantMessages":1,"cleanupRemovedRooms":1}
+{"ok":true,"roomCode":"1419","messageId":3,"attachmentCount":2,"secondParticipantMessages":1,"presenceCount":2,"cleanupRemovedRooms":1}
 ```
 
-## تست دستی ویژگی‌ها
+## Manual QA Checklist
 
-### ساخت اتاق جدید
+### Create a new room
 
-1. وارد `http://localhost/ootaa2/` شوید.
-2. یک نام نمایشی بنویسید.
-3. کد اتاق را خالی بگذارید.
-4. روی `ورود یا ساخت اتاق` بزنید.
+1. Open `http://localhost/ootaa2/`
+2. Enter a display name
+3. Leave the room code empty
+4. Submit the form
 
-نتیجه مورد انتظار:
+Expected result:
 
-- وارد صفحه چت می‌شوید.
-- یک کد ۴ رقمی می‌بینید.
+- You enter the chat screen
+- A 4-digit room code is shown
 
-### ورود به اتاق موجود
+### Join an existing room
 
-1. همان کد ۴ رقمی را در یک مرورگر دیگر یا پنجره Private وارد کنید.
-2. یک نام نمایشی دیگر بنویسید.
-3. روی `ورود یا ساخت اتاق` بزنید.
+1. Open the same room code in another browser or private window
+2. Enter a different display name
+3. Submit the form
 
-نتیجه مورد انتظار:
+Expected result:
 
-- بلافاصله وارد همان اتاق می‌شوید.
+- You enter the same room immediately
 
-### حفظ مالکیت بعد از رفرش
+### Keep ownership after refresh
 
-1. یک پیام بفرستید.
-2. صفحه را refresh کنید.
+1. Send a message
+2. Refresh the page
 
-نتیجه مورد انتظار:
+Expected result:
 
-- همان پیام هنوز برای همان مرورگر قابل ویرایش و حذف است.
+- The same browser can still edit and delete its own message
 
-### تست چند فایل در یک پیام
+### Upload multiple files
 
-1. در اتاق روی `انتخاب فایل` بزنید.
-2. دو فایل انتخاب کنید.
-3. اگر خواستید متن هم بنویسید.
-4. روی `ارسال پیام` بزنید.
+1. Choose two files
+2. Optionally add text
+3. Send the message
 
-نتیجه مورد انتظار:
+Expected result:
 
-- هر دو فایل در همان پیام ثبت می‌شوند.
-- تصویر، صدا یا ویدیو تا جای ممکن inline نمایش داده می‌شود.
-- فایل‌های دیگر دکمه دانلود دارند.
+- Both files appear in the same message
+- Images, audio, and video preview inline when supported
+- Other files show a download button
+- Upload progress is visible during the send
 
-### تست ویرایش و حذف
+### Edit and delete
 
-1. روی `ویرایش` پیام خودتان بزنید.
-2. متن جدید وارد کنید.
-3. روی `حذف` بزنید.
+1. Edit one of your own messages
+2. Delete one of your own messages
 
-نتیجه مورد انتظار:
+Expected result:
 
-- ویرایش فقط برای پیام‌های خودتان کار می‌کند.
-- حذف پیام آن را به حالت deleted تبدیل می‌کند.
+- Edit works only for your own messages
+- Delete removes the message from the visible chat timeline
 
-### تست محافظت فایل
+### Scroll behavior
 
-1. در یک مرورگر عضو اتاق، فایل را باز کنید.
-2. همان لینک فایل را در مرورگری که عضو اتاق نیست باز کنید.
+1. Scroll upward in a busy room
+2. Receive a new message from another participant
 
-نتیجه مورد انتظار:
+Expected result:
 
-- عضو اتاق فایل را می‌بیند.
-- کاربر بیرون از اتاق خطای دسترسی می‌گیرد.
+- The list should not jump unexpectedly
+- A jump-to-latest control should appear
 
-## cleanup اتاق‌ها و فایل‌های منقضی
+### File protection
 
-اتاق‌ها و فایل‌ها بعد از ۳ روز منقضی می‌شوند. برای حذف فیزیکی آن‌ها این اسکریپت را اجرا کنید.
+1. Open an attachment while you are inside the room
+2. Open the same attachment URL in a browser that is not a room member
 
-دستور:
+Expected result:
+
+- A room member can access the file
+- A non-member receives an access error
+
+### PWA install
+
+1. Open the app in a Chromium-based browser
+2. Check installability
+3. Install the app
+4. Reload once or twice
+
+Expected result:
+
+- The app is installable
+- The installed app opens correctly
+- Repeat loads feel faster because the shell is cached
+
+## Cleanup Expired Rooms and Files
+
+Rooms and files expire after 3 days. To remove expired data from disk and the database:
 
 ```powershell
 C:\xampp\php\php.exe scripts\cleanup.php
 ```
 
-نتیجه مورد انتظار:
+Expected result:
 
 ```text
 Expired rooms removed: 0
 ```
 
-اگر اتاق منقضی وجود داشته باشد، عدد بیشتر از صفر می‌شود.
+If expired rooms exist, the number will be greater than zero.
 
-### پیشنهاد برای اجرای خودکار cleanup در ویندوز
+### Suggested Windows Task Scheduler job
 
-از `Task Scheduler` ویندوز یک job روزانه بسازید و این دستور را اجرا کنید:
+Create a daily scheduled task that runs:
 
 ```powershell
 C:\xampp\php\php.exe C:\xampp\htdocs\ootaa2\scripts\cleanup.php
 ```
 
-## اگر می‌خواهید حجم فایل بیشتر شود
+## Increasing Upload Limits
 
-این پروژه از محدودیت‌های PHP برای upload استفاده می‌کند. اگر خواستید فایل بزرگ‌تر بفرستید، فایل زیر را ویرایش کنید:
-
-```text
-C:\xampp\php\php.ini
-```
-
-مقدارهای مهم:
+If you want to allow larger files, review and adjust:
 
 - `upload_max_filesize`
 - `post_max_size`
 - `max_file_uploads`
+- `max_execution_time`
 
-بعد از تغییر، Apache را restart کنید.
-
-## استقرار روی سرور
-
-### ساده‌ترین روش روی سرور ویندوز + XAMPP
-
-1. پوشه پروژه را روی سرور داخل `htdocs` کپی کنید.
-2. Apache و MariaDB را اجرا کنید.
-3. دیتابیس را بسازید.
-4. اسکریپت schema را اجرا کنید.
-5. اگر نام کاربری یا رمز دیتابیس فرق دارد، [config/app.php](/c:/xampp/htdocs/ootaa2/config/app.php) را برای سرور خود تنظیم کنید.
-6. مطمئن شوید پوشه `storage` قابل نوشتن است.
-7. برای cleanup یک job زمان‌بندی‌شده بسازید.
-
-### دستورهای لازم روی سرور
-
-```powershell
-C:\xampp\mysql\bin\mysql.exe -u root -e "CREATE DATABASE IF NOT EXISTS ootaa2 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-C:\xampp\php\php.exe C:\xampp\htdocs\ootaa2\scripts\init_db.php
-C:\xampp\php\php.exe C:\xampp\htdocs\ootaa2\scripts\cleanup.php
-```
-
-## tradeoff های نسخه 1
-
-- از polling استفاده شده، نه WebSocket. برای یک ابزار خصوصی و سبک ساده‌تر و کم‌هزینه‌تر است.
-- ورود فقط با cookie مرورگر انجام می‌شود. اگر cookie پاک شود، مالکیت پیام‌های قبلی هم از بین می‌رود.
-- نقش owner یا admin وجود ندارد. همه کاربران اتاق برابر هستند.
-- فایل‌ها روی دیسک محلی سرور ذخیره می‌شوند. این ساده است ولی برای چند سرور هم‌زمان مناسب نیست.
-- برای سادگی، فرانت‌اند بدون framework نوشته شده است.
-
-## مسیرهای API مهم
-
-- `POST /api/room/enter`
-- `GET /api/room/bootstrap?code=1234`
-- `GET /api/room/messages?code=1234&since=...`
-- `POST /api/room/messages`
-- `PATCH /api/messages/{id}`
-- `DELETE /api/messages/{id}`
-- `GET /file/{attachmentId}`
-
-## وضعیت فعلی
-
-موارد زیر پیاده‌سازی و تست شده‌اند:
-
-- ساخت و ورود به اتاق
-- حفظ مالکیت پیام با همان مرورگر
-- ارسال متن و چند فایل
-- ویرایش و حذف پیام
-- محافظت فایل برای اعضای اتاق
-- cleanup اتاق و فایل منقضی
+These are usually configured in `php.ini`.

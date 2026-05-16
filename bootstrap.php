@@ -85,3 +85,15 @@ function app_url(string $path = ''): string
     return ($basePath === '' ? '' : $basePath) . '/' . $trimmedPath;
 }
 
+function asset_url(string $path): string
+{
+    $normalizedPath = ltrim($path, '/');
+    $version = @filemtime(base_path($normalizedPath));
+
+    if ($version === false) {
+        return app_url($normalizedPath);
+    }
+
+    return app_url($normalizedPath) . '?v=' . rawurlencode((string) $version);
+}
+

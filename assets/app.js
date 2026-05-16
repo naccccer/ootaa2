@@ -1,20 +1,34 @@
 (function () {
-    const appConfig = window.OOTAA_APP || { basePath: "", initialRoom: "" };
+    const appConfig = window.OOTAA_APP || { basePath: "", initialRoom: "", assets: {} };
     const storageKeys = {
         displayName: "ootaa:last-display-name",
         recentRooms: "ootaa:recent-rooms",
         activeRoom: "ootaa:active-room"
     };
+    const pollDelays = {
+        active: 3000,
+        hidden: 10000,
+        fast: 900,
+        reconnect: 400
+    };
     const state = {
         room: null,
         participant: null,
+        presence: null,
         syncCursor: null,
         messages: new Map(),
         pollTimer: null,
         editingMessageId: null,
         statusTimer: null,
         contextMessageId: null,
-        longPressTimer: null
+        longPressTimer: null,
+        selectedFiles: [],
+        uploadXhr: null,
+        uploadProgress: 0,
+        uploadActive: false,
+        newMessagesCount: 0,
+        lastPollError: "",
+        isOnline: navigator.onLine
     };
 
     const dom = {
@@ -32,6 +46,8 @@
         copyRoomCodeButton: document.getElementById("copyRoomCodeButton"),
         leaveRoomButton: document.getElementById("leaveRoomButton"),
         messagesList: document.getElementById("messagesList"),
+        jumpToLatestButton: document.getElementById("jumpToLatestButton"),
+        jumpToLatestCount: document.getElementById("jumpToLatestCount"),
         composerForm: document.getElementById("composerForm"),
         editModeBanner: document.getElementById("editModeBanner"),
         editModeText: document.getElementById("editModeText"),
@@ -39,6 +55,10 @@
         messageInput: document.getElementById("messageInput"),
         fileInput: document.getElementById("fileInput"),
         selectedFilesList: document.getElementById("selectedFilesList"),
+        uploadProgress: document.getElementById("uploadProgress"),
+        uploadProgressLabel: document.getElementById("uploadProgressLabel"),
+        uploadProgressPercent: document.getElementById("uploadProgressPercent"),
+        uploadProgressBar: document.getElementById("uploadProgressBar"),
         sendButton: document.getElementById("sendButton"),
         chatStatus: document.getElementById("chatStatus"),
         confirmDialog: document.getElementById("confirmDialog"),
@@ -53,8 +73,7 @@
     };
 
     function apiPath(path) {
-        const base = appConfig.basePath || "";
-        return `${base}${path}`;
+        return `${appConfig.basePath || ""}${path}`;
     }
 
     function roomPath(roomCode) {
@@ -146,7 +165,7 @@
         localStorage.setItem(key, JSON.stringify(value));
     }
 
-    function setStatus(target, message, isError) {
+    function setStatus(target, message, isError, persistent) {
         window.clearTimeout(state.statusTimer);
 
         if (!message) {
@@ -160,12 +179,25 @@
         target.textContent = message;
         target.classList.toggle("is-error", Boolean(isError));
 
-        if (!isError) {
+        if (!isError && !persistent) {
             state.statusTimer = window.setTimeout(() => {
                 if (target.textContent === message) {
-                    setStatus(target, "", false);
+                    setStatus(target, "", false, false);
                 }
             }, 2200);
+        }
+    }
+
+    function clearPollError() {
+        state.lastPollError = "";
+
+        if (!state.uploadActive && !state.isOnline) {
+            setStatus(dom.chatStatus, "شما آفلاین هستید. پیام‌های تازه بعد از اتصال دوباره دریافت می‌شوند.", true, true);
+            return;
+        }
+
+        if (!state.uploadActive) {
+            setStatus(dom.chatStatus, "", false, false);
         }
     }
 
@@ -181,19 +213,22 @@
             ...options
         });
         const raw = await response.text();
+        return parseJsonPayload(response.status, response.headers.get("content-type") || "", raw);
+    }
+
+    function parseJsonPayload(status, contentType, raw) {
         let payload = null;
 
         try {
             payload = raw ? JSON.parse(raw) : null;
         } catch (error) {
-            const responseType = response.headers.get("content-type") || "";
-            const isHtmlResponse = responseType.includes("text/html") || raw.trim().startsWith("<");
+            const isHtmlResponse = contentType.includes("text/html") || raw.trim().startsWith("<");
 
-            if (response.status >= 500) {
+            if (status >= 500) {
                 throw new Error("سرور با خطای داخلی پاسخ داد. تنظیمات دیتابیس، import جداول، و خطاهای PHP را بررسی کنید.");
             }
 
-            if (response.status === 404) {
+            if (status === 404) {
                 throw new Error("مسیر API پیدا نشد. به احتمال زیاد .htaccess یا rewrite روی هاست درست کار نمی‌کند.");
             }
 
@@ -206,19 +241,113 @@
                 : "پاسخ API معتبر نیست.");
         }
 
-        if (!response.ok || !payload?.ok) {
+        if (status >= 400 || !payload?.ok) {
             throw new Error(payload?.error?.message || "درخواست انجام نشد.");
         }
 
         return payload.data;
     }
 
+    function sendMultipartWithProgress(url, formData, onProgress) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            state.uploadXhr = xhr;
+            xhr.open("POST", url, true);
+            xhr.responseType = "text";
+            xhr.setRequestHeader("Accept", "application/json");
+            xhr.withCredentials = true;
+
+            xhr.upload.addEventListener("progress", (event) => {
+                if (!event.lengthComputable) {
+                    return;
+                }
+
+                const ratio = Math.max(0, Math.min(1, event.loaded / event.total));
+                onProgress(ratio);
+            });
+
+            xhr.addEventListener("load", () => {
+                try {
+                    resolve(parseJsonPayload(xhr.status, xhr.getResponseHeader("Content-Type") || "", xhr.responseText || ""));
+                } catch (error) {
+                    reject(error);
+                } finally {
+                    state.uploadXhr = null;
+                }
+            });
+
+            xhr.addEventListener("error", () => {
+                state.uploadXhr = null;
+                reject(new Error("ارسال فایل به سرور کامل نشد."));
+            });
+
+            xhr.addEventListener("abort", () => {
+                state.uploadXhr = null;
+                reject(new Error("ارسال فایل متوقف شد."));
+            });
+
+            xhr.send(formData);
+        });
+    }
+
     function setBusy(button, isBusy) {
         button.disabled = isBusy;
     }
 
+    function setOnlineState(isOnline) {
+        state.isOnline = isOnline;
+
+        if (!isOnline) {
+            setStatus(dom.chatStatus, "شما آفلاین هستید. پیام‌های تازه بعد از اتصال دوباره دریافت می‌شوند.", true, true);
+            return;
+        }
+
+        if (!state.uploadActive) {
+            setStatus(dom.chatStatus, "اتصال دوباره برقرار شد.", false, false);
+        }
+    }
+
+    function syncFileInput() {
+        const transfer = new DataTransfer();
+        state.selectedFiles.forEach((file) => transfer.items.add(file));
+        dom.fileInput.files = transfer.files;
+    }
+
+    function updateSendAvailability() {
+        const hasText = dom.messageInput.value.trim() !== "";
+        const hasFiles = state.selectedFiles.length > 0;
+        const canSend = state.room && !state.uploadActive && (state.editingMessageId ? hasText : (hasText || hasFiles));
+
+        dom.sendButton.disabled = !canSend;
+    }
+
+    function setUploadProgress(progress, label) {
+        state.uploadProgress = progress;
+        dom.uploadProgress.hidden = !state.uploadActive;
+        dom.uploadProgressLabel.textContent = label || "در حال ارسال...";
+        dom.uploadProgressPercent.textContent = `${Math.round(progress * 100)}%`;
+        dom.uploadProgressBar.style.width = `${Math.round(progress * 100)}%`;
+    }
+
+    function beginUploadProgress() {
+        state.uploadActive = true;
+        dom.uploadProgress.hidden = false;
+        setUploadProgress(0, "در حال ارسال...");
+        renderComposerState();
+    }
+
+    function finishUploadProgress() {
+        state.uploadActive = false;
+        state.uploadProgress = 0;
+        dom.uploadProgress.hidden = true;
+        dom.uploadProgressBar.style.width = "0%";
+        dom.uploadProgressPercent.textContent = "0%";
+        renderComposerState();
+    }
+
     async function enterRoom(displayName, roomCode, isAutomatic) {
-        setStatus(dom.entryStatus, isAutomatic ? "در حال بازیابی گفتگو..." : "در حال ورود به اتاق...", false);
+        document.body.classList.remove("app-loading");
+        setStatus(dom.entryStatus, isAutomatic ? "در حال بازیابی گفتگو..." : "در حال ورود به اتاق...", false, true);
         setBusy(dom.enterButton, true);
 
         try {
@@ -232,9 +361,11 @@
 
             state.room = data.room;
             state.participant = data.participant;
+            state.presence = data.presence || null;
             state.syncCursor = null;
             state.messages.clear();
             state.editingMessageId = null;
+            state.newMessagesCount = 0;
 
             localStorage.setItem(storageKeys.displayName, displayName);
             writeJson(storageKeys.activeRoom, {
@@ -246,26 +377,32 @@
             dom.displayNameInput.value = displayName;
             dom.roomCodeInput.value = data.room.code;
 
-            await bootstrapRoom();
             renderShell();
-            setStatus(dom.entryStatus, "", false);
+            renderLoadingMessages();
+            await bootstrapRoom();
+            setStatus(dom.entryStatus, "", false, false);
         } catch (error) {
             if (isAutomatic) {
                 localStorage.removeItem(storageKeys.activeRoom);
             }
 
-            setStatus(dom.entryStatus, error.message, true);
+            setStatus(dom.entryStatus, error.message, true, true);
             leaveRoom(false);
         } finally {
             setBusy(dom.enterButton, false);
         }
     }
 
+    function applyRoomPayload(data) {
+        state.room = data.room || state.room;
+        state.participant = data.participant || state.participant;
+        state.presence = data.presence || state.presence;
+    }
+
     async function bootstrapRoom() {
         const data = await fetchJson(`${apiPath("/api/room/bootstrap")}?code=${encodeURIComponent(state.room.code)}`);
 
-        state.room = data.room;
-        state.participant = data.participant;
+        applyRoomPayload(data);
         state.syncCursor = data.syncCursor;
         state.messages = new Map();
 
@@ -273,8 +410,21 @@
             state.messages.set(message.id, message);
         });
 
-        renderMessages(true);
-        schedulePolling(true);
+        renderShell();
+        renderMessages(true, 0);
+        schedulePolling("fast");
+    }
+
+    function summarizePresence() {
+        if (!state.presence || state.presence.onlineCount <= 0) {
+            return "فعلا کسی آنلاین نیست";
+        }
+
+        const names = Array.isArray(state.presence.participants) ? state.presence.participants : [];
+        const extraCount = Math.max(0, state.presence.onlineCount - names.length);
+        const namesText = names.join("، ");
+        const suffix = extraCount > 0 ? ` +${extraCount}` : "";
+        return `${state.presence.onlineCount} نفر آنلاین${namesText ? `: ${namesText}${suffix}` : ""}`;
     }
 
     async function pollMessages() {
@@ -290,8 +440,16 @@
             }
 
             const data = await fetchJson(`${apiPath("/api/room/messages")}?${query.toString()}`);
+            const beforeIds = new Set(state.messages.keys());
+            const incoming = [];
+
+            applyRoomPayload(data);
 
             data.messages.forEach((message) => {
+                if (!beforeIds.has(message.id)) {
+                    incoming.push(message);
+                }
+
                 state.messages.set(message.id, message);
             });
 
@@ -299,22 +457,41 @@
                 state.syncCursor = data.syncCursor;
             }
 
-            renderMessages(false);
+            clearPollError();
+            renderShell();
+            renderMessages(false, incoming.length);
         } catch (error) {
-            setStatus(dom.chatStatus, error.message, true);
+            if (error.message !== state.lastPollError) {
+                state.lastPollError = error.message;
+                setStatus(dom.chatStatus, error.message, true, true);
+            }
         } finally {
-            schedulePolling(false);
+            schedulePolling("normal");
         }
     }
 
-    function schedulePolling(immediate) {
+    function schedulePolling(mode) {
         window.clearTimeout(state.pollTimer);
 
         if (!state.room) {
             return;
         }
 
-        const delay = immediate ? 0 : (document.visibilityState === "visible" ? 3000 : 10000);
+        let delay;
+
+        switch (mode) {
+            case "fast":
+                delay = pollDelays.fast;
+                break;
+            case "reconnect":
+                delay = pollDelays.reconnect;
+                break;
+            case "normal":
+            default:
+                delay = document.visibilityState === "visible" ? pollDelays.active : pollDelays.hidden;
+                break;
+        }
+
         state.pollTimer = window.setTimeout(pollMessages, delay);
     }
 
@@ -326,10 +503,11 @@
         }
 
         const text = dom.messageInput.value.trim();
-        const files = Array.from(dom.fileInput.files || []);
+        const files = [...state.selectedFiles];
 
         if (!text && files.length === 0 && !state.editingMessageId) {
-            setStatus(dom.chatStatus, "یک پیام یا حداقل یک فایل انتخاب کنید.", true);
+            setStatus(dom.chatStatus, "یک پیام یا حداقل یک فایل انتخاب کنید.", true, true);
+            updateSendAvailability();
             return;
         }
 
@@ -344,37 +522,46 @@
 
                 state.messages.set(data.message.id, data.message);
                 state.syncCursor = data.message.updatedAt;
+                state.presence = data.presence || state.presence;
                 resetComposer();
-                renderMessages(false);
-                setStatus(dom.chatStatus, "پیام ویرایش شد.", false);
-            } else {
-                const formData = new FormData();
-                formData.append("roomCode", state.room.code);
-                formData.append("text", dom.messageInput.value);
-
-                files.forEach((file) => {
-                    formData.append("files[]", file);
-                });
-
-                setStatus(dom.chatStatus, "در حال ارسال پیام...", false);
-
-                const data = await fetchJson(apiPath("/api/room/messages"), {
-                    method: "POST",
-                    body: formData
-                });
-
-                state.messages.set(data.message.id, data.message);
-                state.syncCursor = data.message.updatedAt;
-                state.room = data.room;
                 renderShell();
-                resetComposer();
-                setStatus(dom.chatStatus, "", false);
+                renderMessages(false, 0);
+                setStatus(dom.chatStatus, "پیام ویرایش شد.", false, false);
+                schedulePolling("fast");
+                return;
             }
+
+            const formData = new FormData();
+            formData.append("roomCode", state.room.code);
+            formData.append("text", dom.messageInput.value);
+
+            files.forEach((file) => {
+                formData.append("files[]", file);
+            });
+
+            beginUploadProgress();
+            setStatus(dom.chatStatus, "در حال ارسال پیام...", false, true);
+
+            const data = await sendMultipartWithProgress(apiPath("/api/room/messages"), formData, (progress) => {
+                setUploadProgress(progress, "در حال بارگذاری فایل...");
+            });
+
+            state.messages.set(data.message.id, data.message);
+            state.syncCursor = data.message.updatedAt;
+            state.room = data.room;
+            state.presence = data.presence || state.presence;
+            resetComposer();
+            finishUploadProgress();
+            renderShell();
+            renderMessages(true, 0);
+            setStatus(dom.chatStatus, "پیام ارسال شد.", false, false);
+            schedulePolling("fast");
         } catch (error) {
-            setStatus(dom.chatStatus, error.message, true);
+            finishUploadProgress();
+            setStatus(dom.chatStatus, error.message, true, true);
         } finally {
             setBusy(dom.sendButton, false);
-            schedulePolling(false);
+            updateSendAvailability();
         }
     }
 
@@ -387,12 +574,13 @@
 
         state.editingMessageId = messageId;
         dom.messageInput.value = current.bodyText || "";
-        dom.fileInput.value = "";
+        state.selectedFiles = [];
+        syncFileInput();
         updateFileSummary();
         renderComposerState();
         autoResizeTextarea();
         dom.messageInput.focus();
-        setStatus(dom.chatStatus, "ویرایش پیام فعال شد.", false);
+        setStatus(dom.chatStatus, "ویرایش پیام فعال شد.", false, false);
     }
 
     function exitEditMode() {
@@ -419,16 +607,18 @@
 
             state.messages.set(data.message.id, data.message);
             state.syncCursor = data.message.updatedAt;
+            state.presence = data.presence || state.presence;
 
             if (state.editingMessageId === messageId) {
-                exitEditMode();
                 resetComposer();
             }
 
-            renderMessages(false);
-            setStatus(dom.chatStatus, "پیام حذف شد.", false);
+            renderShell();
+            renderMessages(false, 0);
+            setStatus(dom.chatStatus, "پیام حذف شد.", false, false);
+            schedulePolling("fast");
         } catch (error) {
-            setStatus(dom.chatStatus, error.message, true);
+            setStatus(dom.chatStatus, error.message, true, true);
         }
     }
 
@@ -455,16 +645,11 @@
     function bindMessageContextTriggers() {
         dom.messagesList.querySelectorAll(".message-bubble").forEach((bubble) => {
             const openMenu = (x, y) => {
-                const row = bubble.closest(".message-row");
-                const editButton = row ? row.querySelector("[data-action='edit']") : null;
-                const deleteButton = row ? row.querySelector("[data-action='delete']") : null;
-                const messageId = Number((editButton || deleteButton)?.dataset.messageId || 0);
+                const target = getContextTargetFromBubble(bubble);
 
-                if (!messageId) {
-                    return;
+                if (target) {
+                    showMessageContextMenu(target.messageId, target.isOwn, x, y);
                 }
-
-                showMessageContextMenu(messageId, Boolean(editButton), x, y);
             };
 
             bubble.addEventListener("contextmenu", (event) => {
@@ -495,15 +680,15 @@
         const message = state.messages.get(messageId);
 
         if (!message || !message.bodyText) {
-            setStatus(dom.chatStatus, "متنی برای کپی وجود ندارد.", true);
+            setStatus(dom.chatStatus, "متنی برای کپی وجود ندارد.", true, true);
             return;
         }
 
         try {
             await navigator.clipboard.writeText(message.bodyText);
-            setStatus(dom.chatStatus, "پیام کپی شد.", false);
+            setStatus(dom.chatStatus, "پیام کپی شد.", false, false);
         } catch (error) {
-            setStatus(dom.chatStatus, "کپی خودکار انجام نشد.", true);
+            setStatus(dom.chatStatus, "کپی خودکار انجام نشد.", true, true);
         }
     }
 
@@ -554,22 +739,35 @@
         const isInRoom = Boolean(state.room);
         dom.entryPanel.hidden = isInRoom;
         dom.chatView.hidden = !isInRoom;
+        document.body.classList.remove("app-loading");
 
         if (!isInRoom) {
             return;
         }
 
         dom.roomCodeBadge.textContent = state.room.code;
-        dom.roomSubtitleText.textContent = `${state.participant.displayName} • اعتبار اتاق تا ${formatDate(state.room.expiresAt)}`;
-        renderMessages(false);
+        dom.roomSubtitleText.textContent = `${state.participant.displayName} • ${summarizePresence()} • اعتبار اتاق تا ${formatDate(state.room.expiresAt)}`;
         renderComposerState();
+        renderJumpToLatest();
     }
 
-    function renderMessages(forceScroll) {
+    function renderLoadingMessages() {
+        dom.messagesList.innerHTML = `
+            <div class="messages-loading">
+                <span class="messages-loading__pulse"></span>
+                <span class="messages-loading__pulse"></span>
+                <span class="messages-loading__pulse"></span>
+            </div>
+        `;
+    }
+
+    function renderMessages(forceScroll, incomingCount) {
         const items = Array.from(state.messages.values())
             .filter((message) => !message.isDeleted)
             .sort((left, right) => left.id - right.id);
         const shouldStickToBottom = forceScroll || isScrolledNearBottom(dom.messagesList);
+        const previousScrollHeight = dom.messagesList.scrollHeight;
+        const previousScrollTop = dom.messagesList.scrollTop;
 
         if (items.length === 0) {
             dom.messagesList.innerHTML = `
@@ -579,6 +777,8 @@
                     گفتگو را با یک پیام کوتاه یا یک فایل شروع کنید.
                 </div>
             `;
+            state.newMessagesCount = 0;
+            renderJumpToLatest();
             return;
         }
 
@@ -587,7 +787,17 @@
 
         if (shouldStickToBottom) {
             dom.messagesList.scrollTop = dom.messagesList.scrollHeight;
+            state.newMessagesCount = 0;
+        } else {
+            const nextScrollHeight = dom.messagesList.scrollHeight;
+            dom.messagesList.scrollTop = previousScrollTop + (nextScrollHeight - previousScrollHeight);
+
+            if (incomingCount > 0) {
+                state.newMessagesCount += incomingCount;
+            }
         }
+
+        renderJumpToLatest();
     }
 
     function renderMessageCard(message) {
@@ -740,7 +950,7 @@
                 const displayName = dom.displayNameInput.value.trim() || localStorage.getItem(storageKeys.displayName) || "";
 
                 if (!displayName) {
-                    setStatus(dom.entryStatus, "اول یک نام نمایشی وارد کنید.", true);
+                    setStatus(dom.entryStatus, "اول یک نام نمایشی وارد کنید.", true, true);
                     dom.displayNameInput.focus();
                     return;
                 }
@@ -757,6 +967,7 @@
         updateFileSummary();
         autoResizeTextarea();
         renderComposerState();
+        updateSendAvailability();
     }
 
     function maybeAutoEnter() {
@@ -770,38 +981,59 @@
     }
 
     function updateFileSummary() {
-        const files = Array.from(dom.fileInput.files || []);
-
-        if (files.length === 0) {
+        if (state.selectedFiles.length === 0) {
             dom.selectedFilesList.hidden = true;
             dom.selectedFilesList.innerHTML = "";
+            updateSendAvailability();
             return;
         }
 
         dom.selectedFilesList.hidden = false;
-        dom.selectedFilesList.innerHTML = files.map((file) => `
+        dom.selectedFilesList.innerHTML = state.selectedFiles.map((file, index) => `
             <div class="selected-file-chip">
                 <span aria-hidden="true">${renderIcon("file")}</span>
                 <span class="selected-file-chip__name">${escapeHtml(file.name)}</span>
+                <button type="button" class="selected-file-chip__remove" data-remove-file="${index}" aria-label="حذف فایل">
+                    ${renderIcon("close")}
+                </button>
             </div>
         `).join("");
+
+        dom.selectedFilesList.querySelectorAll("[data-remove-file]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const index = Number(button.dataset.removeFile);
+
+                if (Number.isNaN(index)) {
+                    return;
+                }
+
+                state.selectedFiles.splice(index, 1);
+                syncFileInput();
+                updateFileSummary();
+            });
+        });
+
+        updateSendAvailability();
     }
 
     function renderComposerState() {
         const isEditing = Boolean(state.editingMessageId);
         dom.editModeBanner.hidden = !isEditing;
-        dom.fileInput.disabled = isEditing;
+        dom.fileInput.disabled = isEditing || state.uploadActive;
+        dom.messageInput.disabled = state.uploadActive;
         dom.editModeText.textContent = isEditing
             ? "در این حالت فقط متن پیام به‌روزرسانی می‌شود."
             : "متن پیام را اصلاح کنید.";
         dom.sendButton.setAttribute("aria-label", isEditing ? "ثبت ویرایش پیام" : "ارسال پیام");
         dom.sendButton.setAttribute("title", isEditing ? "ثبت ویرایش پیام" : "ارسال پیام");
-        updateFileSummary();
+        dom.cancelEditButton.disabled = state.uploadActive;
+        updateSendAvailability();
     }
 
     function autoResizeTextarea() {
         dom.messageInput.style.height = "40px";
         dom.messageInput.style.height = `${Math.min(dom.messageInput.scrollHeight, 132)}px`;
+        updateSendAvailability();
     }
 
     function handleComposerKeydown(event) {
@@ -821,18 +1053,23 @@
     function resetComposer() {
         dom.composerForm.reset();
         state.editingMessageId = null;
+        state.selectedFiles = [];
+        syncFileInput();
         updateFileSummary();
         renderComposerState();
         autoResizeTextarea();
     }
 
-    function leaveRoom(clearActive = true) {
+    function leaveRoom(clearActive) {
         window.clearTimeout(state.pollTimer);
         state.room = null;
         state.participant = null;
+        state.presence = null;
         state.syncCursor = null;
         state.messages.clear();
         state.editingMessageId = null;
+        state.newMessagesCount = 0;
+        finishUploadProgress();
 
         if (clearActive) {
             localStorage.removeItem(storageKeys.activeRoom);
@@ -841,7 +1078,7 @@
 
         dom.messagesList.innerHTML = "";
         resetComposer();
-        setStatus(dom.chatStatus, "", false);
+        setStatus(dom.chatStatus, "", false, false);
         renderShell();
     }
 
@@ -849,8 +1086,21 @@
         return element.scrollHeight - element.scrollTop - element.clientHeight < 100;
     }
 
+    function renderJumpToLatest() {
+        const visible = state.newMessagesCount > 0 && !isScrolledNearBottom(dom.messagesList);
+        dom.jumpToLatestButton.hidden = !visible;
+        dom.jumpToLatestCount.textContent = String(state.newMessagesCount);
+    }
+
+    function scrollToLatest() {
+        dom.messagesList.scrollTop = dom.messagesList.scrollHeight;
+        state.newMessagesCount = 0;
+        renderJumpToLatest();
+    }
+
     function renderIcon(name) {
         const icons = {
+            close: '<svg viewBox="0 0 24 24" focusable="false"><path d="M6.97 6.97a.75.75 0 0 1 1.06 0L12 10.94l3.97-3.97a.75.75 0 1 1 1.06 1.06L13.06 12l3.97 3.97a.75.75 0 1 1-1.06 1.06L12 13.06l-3.97 3.97a.75.75 0 1 1-1.06-1.06L10.94 12 6.97 8.03a.75.75 0 0 1 0-1.06Z"/></svg>',
             edit: '<svg viewBox="0 0 24 24" focusable="false"><path d="M15.12 4.47a2.25 2.25 0 0 1 3.18 3.18L9.56 16.39l-3.98.8.8-3.98 8.74-8.74Zm1.06 1.06-8.39 8.39-.37 1.83 1.83-.37 8.39-8.39a.75.75 0 1 0-1.06-1.06Z"/></svg>',
             trash: '<svg viewBox="0 0 24 24" focusable="false"><path d="M9.75 3.5h4.5c.83 0 1.5.67 1.5 1.5V6h3a.75.75 0 0 1 0 1.5h-.72l-.63 10.07A2.5 2.5 0 0 1 14.91 20H9.09a2.5 2.5 0 0 1-2.49-2.43L5.97 7.5H5.25a.75.75 0 0 1 0-1.5h3V5c0-.83.67-1.5 1.5-1.5Zm4.5 2.5V5h-4.5v1h4.5ZM9.5 9.25a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0V10a.75.75 0 0 1 .75-.75Zm5 0a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0V10a.75.75 0 0 1 .75-.75Z"/></svg>',
             image: '<svg viewBox="0 0 24 24" focusable="false"><path d="M5.75 4A2.75 2.75 0 0 0 3 6.75v10.5A2.75 2.75 0 0 0 5.75 20h12.5A2.75 2.75 0 0 0 21 17.25V6.75A2.75 2.75 0 0 0 18.25 4H5.75Zm0 1.5h12.5c.69 0 1.25.56 1.25 1.25v6.17l-3.13-3.12a1.75 1.75 0 0 0-2.47 0l-1.15 1.15-2.45-2.45a1.75 1.75 0 0 0-2.47 0L4.5 13.83V6.75c0-.69.56-1.25 1.25-1.25Zm1.9 2.4a1.35 1.35 0 1 0 0 2.7 1.35 1.35 0 0 0 0-2.7Zm-3.15 8.05 4.4-4.4a.25.25 0 0 1 .36 0l5 5H5.75a1.25 1.25 0 0 1-1.25-1.25v-.35Zm13.75 1.6h-1.88l-2.56-2.56 1.15-1.15a.25.25 0 0 1 .35 0l3.19 3.18a1.24 1.24 0 0 1-.25.53Z"/></svg>',
@@ -864,10 +1114,36 @@
         return icons[name] || icons.file;
     }
 
+    function registerServiceWorker() {
+        if (!("serviceWorker" in navigator) || !appConfig.assets?.serviceWorker) {
+            return;
+        }
+
+        window.addEventListener("load", () => {
+            navigator.serviceWorker.register(appConfig.assets.serviceWorker, {
+                scope: `${appConfig.basePath || ""}/`
+            }).catch(() => {
+                // Keep startup resilient even if service worker registration fails.
+            });
+        });
+    }
+
     document.addEventListener("visibilitychange", () => {
         if (state.room) {
-            schedulePolling(false);
+            schedulePolling(document.visibilityState === "visible" ? "reconnect" : "normal");
         }
+    });
+
+    window.addEventListener("online", () => {
+        setOnlineState(true);
+
+        if (state.room) {
+            schedulePolling("reconnect");
+        }
+    });
+
+    window.addEventListener("offline", () => {
+        setOnlineState(false);
     });
 
     dom.enterForm.addEventListener("submit", (event) => {
@@ -878,7 +1154,10 @@
     dom.composerForm.addEventListener("submit", sendMessage);
     dom.messageInput.addEventListener("input", autoResizeTextarea);
     dom.messageInput.addEventListener("keydown", handleComposerKeydown);
-    dom.fileInput.addEventListener("change", updateFileSummary);
+    dom.fileInput.addEventListener("change", () => {
+        state.selectedFiles = Array.from(dom.fileInput.files || []);
+        updateFileSummary();
+    });
     dom.cancelEditButton.addEventListener("click", () => {
         exitEditMode();
         resetComposer();
@@ -905,13 +1184,20 @@
 
         try {
             await navigator.clipboard.writeText(window.location.origin + roomPath(state.room.code));
-            setStatus(dom.chatStatus, "لینک اتاق کپی شد.", false);
+            setStatus(dom.chatStatus, "لینک اتاق کپی شد.", false, false);
         } catch (error) {
-            setStatus(dom.chatStatus, "کپی خودکار انجام نشد. لینک را دستی کپی کنید.", true);
+            setStatus(dom.chatStatus, "کپی خودکار انجام نشد. لینک را دستی کپی کنید.", true, true);
         }
     });
+    dom.jumpToLatestButton.addEventListener("click", scrollToLatest);
     dom.roomCodeInput.addEventListener("input", () => {
         dom.roomCodeInput.value = dom.roomCodeInput.value.replace(/\D+/g, "").slice(0, 4);
+    });
+    dom.messagesList.addEventListener("scroll", () => {
+        if (isScrolledNearBottom(dom.messagesList)) {
+            state.newMessagesCount = 0;
+            renderJumpToLatest();
+        }
     });
     dom.messagesList.addEventListener("contextmenu", (event) => {
         const bubble = event.target.closest(".message-bubble");
@@ -976,6 +1262,18 @@
             await deleteMessage(messageId);
         }
     });
+    dom.messagesList.addEventListener("click", (event) => {
+        const editButton = event.target.closest("[data-action='edit']");
+        const deleteButton = event.target.closest("[data-action='delete']");
+
+        if (editButton) {
+            enterEditMode(Number(editButton.dataset.messageId));
+        }
+
+        if (deleteButton) {
+            deleteMessage(Number(deleteButton.dataset.messageId));
+        }
+    });
     document.addEventListener("click", (event) => {
         if (!dom.messageContextMenu.hidden && !dom.messageContextMenu.contains(event.target)) {
             hideMessageContextMenu();
@@ -986,4 +1284,5 @@
 
     restoreFormState();
     maybeAutoEnter();
+    registerServiceWorker();
 })();
