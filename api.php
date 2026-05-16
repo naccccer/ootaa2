@@ -37,6 +37,14 @@ try {
         ));
     }
 
+    if ($route === 'room/name' && $method === 'PATCH') {
+        JsonResponse::success($service->updateRoomName(
+            (string) Request::input('roomCode', ''),
+            $browserId,
+            (string) Request::input('name', '')
+        ));
+    }
+
     if ($route === 'room/messages' && $method === 'GET') {
         JsonResponse::success($service->fetchMessages(
             (string) Request::query('code', ''),

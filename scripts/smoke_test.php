@@ -145,10 +145,28 @@ try {
         ],
     ]);
     assert_true(($enterTwo['presence']['onlineCount'] ?? 0) >= 2, 'Presence should include both participants after join.');
+    assert_true(($enterTwo['room']['name'] ?? null) === 'Mina', 'Room name should default to the first participant after the creator.');
 
     $bootstrap = requestJson('GET', $baseUrl . '/api/room/bootstrap?code=' . urlencode($roomCode), $cookieOne);
     assert_true($bootstrap['room']['code'] === $roomCode, 'Bootstrap returned the wrong room.');
+    assert_true(($bootstrap['room']['name'] ?? null) === 'Mina', 'Bootstrap should return the derived room name.');
     assert_true(($bootstrap['presence']['onlineCount'] ?? 0) >= 2, 'Bootstrap should return presence data.');
+
+    $renameRoom = requestJson('PATCH', $baseUrl . '/api/room/name', $cookieOne, [
+        'json' => [
+            'roomCode' => $roomCode,
+            'name' => 'اتاق پروژه',
+        ],
+    ]);
+    assert_true(($renameRoom['room']['name'] ?? null) === 'اتاق پروژه', 'Creator should be able to rename the room.');
+
+    $renameForbidden = request('PATCH', $baseUrl . '/api/room/name', $cookieTwo, [
+        'json' => [
+            'roomCode' => $roomCode,
+            'name' => 'نام غیرمجاز',
+        ],
+    ]);
+    assert_true($renameForbidden['status'] === 403, 'A non-creator should not be able to rename the room.');
 
     $pngPath = $tempDir . DIRECTORY_SEPARATOR . 'smoke.png';
     $textPath = $tempDir . DIRECTORY_SEPARATOR . 'smoke.txt';
@@ -173,6 +191,7 @@ try {
     assert_true(is_array($downloadAttachment), 'Download attachment was not detected.');
 
     $pollTwo = requestJson('GET', $baseUrl . '/api/room/messages?code=' . urlencode($roomCode), $cookieTwo);
+    assert_true(($pollTwo['room']['name'] ?? null) === 'اتاق پروژه', 'Polling should return the latest room name.');
     assert_true(count($pollTwo['messages']) >= 1, 'Second participant did not receive the new message.');
     assert_true(($pollTwo['presence']['onlineCount'] ?? 0) >= 2, 'Polling should return presence data.');
 

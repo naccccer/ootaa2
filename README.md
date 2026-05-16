@@ -13,7 +13,7 @@ Ootaa is a lightweight private chat app for small groups. A user only needs a di
 - Edit and delete only your own messages
 - Upload progress for media and file sends
 - Lightweight presence indicator in the room header
-- Rooms and files expire after 3 days
+- Rooms and files expire after 7 days
 - Installable PWA with a cached app shell
 
 When a message is deleted, it is removed from the visible chat timeline for participants.
@@ -232,7 +232,7 @@ Expected result:
 
 ## Cleanup Expired Rooms and Files
 
-Rooms and files expire after 3 days. To remove expired data from disk and the database:
+Rooms and files expire after 7 days. To remove expired data from disk and the database:
 
 ```powershell
 C:\xampp\php\php.exe scripts\cleanup.php

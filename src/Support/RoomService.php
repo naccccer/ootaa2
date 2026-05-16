@@ -11,8 +11,11 @@ use Throwable;
 
 class RoomService
 {
+    private static bool $schemaEnsured = false;
+
     public function __construct(private readonly PDO $pdo)
     {
+        $this->ensureSchema();
     }
 
     public static function make(): self
@@ -37,7 +40,7 @@ class RoomService
         $roomCode = $this->sanitizeRoomCode($roomCode, true);
 
         if ($roomCode === null) {
-            $room = $this->createRoom();
+            $room = $this->createRoom($browserId);
         } else {
             $room = $this->findRoomByCode($roomCode);
 
@@ -47,11 +50,12 @@ class RoomService
         }
 
         $participant = $this->upsertParticipant((int) $room['id'], $browserId, $displayName);
+        $this->applyAutomaticRoomName((int) $room['id'], $room, $browserId, $participant['displayName']);
         $this->touchRoom((int) $room['id']);
         $room = $this->requireRoomById((int) $room['id']);
 
         return [
-            'room' => $this->serializeRoom($room),
+            'room' => $this->serializeRoom($room, $browserId),
             'participant' => $participant,
             'presence' => $this->presenceForRoom((int) $room['id']),
         ];
@@ -64,10 +68,45 @@ class RoomService
         $messages = $this->loadMessages((int) $room['id'], null, $browserId);
 
         return [
-            'room' => $this->serializeRoom($room),
+            'room' => $this->serializeRoom($room, $browserId),
             'participant' => $membership['participant'],
             'messages' => $messages,
             'syncCursor' => $this->resolveSyncCursor($messages),
+            'presence' => $this->presenceForRoom((int) $room['id']),
+        ];
+    }
+
+    public function updateRoomName(string $roomCode, string $browserId, string $roomName): array
+    {
+        $membership = $this->requireMembership($roomCode, $browserId);
+        $room = $this->claimCreatorIfMissing($membership['room'], $browserId);
+        $creatorBrowserId = trim((string) ($room['creator_browser_id'] ?? ''));
+
+        if ($creatorBrowserId === '' || !hash_equals($creatorBrowserId, $browserId)) {
+            throw new ApiException('ÙÙ‚Ø· Ø³Ø§Ø²Ù†Ø¯Ù‡ Ø§ØªØ§Ù‚ Ù…ÛŒâ€ŒØªÙˆØ§Ù†Ø¯ Ù†Ø§Ù… Ø§ØªØ§Ù‚ Ø±Ø§ ØªØºÛŒÛŒØ± Ø¯Ù‡Ø¯.', 403);
+        }
+
+        $roomName = $this->sanitizeRoomName($roomName);
+        $now = $this->now();
+        $statement = $this->pdo->prepare(
+            'UPDATE rooms
+             SET name = :name,
+                 updated_at = :updated_at,
+                 last_activity_at = :last_activity_at,
+                 expires_at = :expires_at
+             WHERE id = :id'
+        );
+        $statement->execute([
+            'name' => $roomName,
+            'updated_at' => $now,
+            'last_activity_at' => $now,
+            'expires_at' => $this->expiryFrom($now),
+            'id' => (int) $room['id'],
+        ]);
+
+        return [
+            'room' => $this->serializeRoom($this->requireRoomById((int) $room['id']), $browserId),
+            'participant' => $membership['participant'],
             'presence' => $this->presenceForRoom((int) $room['id']),
         ];
     }
@@ -80,6 +119,7 @@ class RoomService
         $messages = $this->loadMessages($roomId, $since, $browserId);
 
         return [
+            'room' => $this->serializeRoom($membership['room'], $browserId),
             'messages' => $messages,
             'syncCursor' => $this->resolveSyncCursor($messages, $since),
             'presence' => $this->presenceForRoom($roomId),
@@ -131,7 +171,7 @@ class RoomService
 
             return [
                 'message' => $this->loadMessageById($messageId, $browserId),
-                'room' => $this->serializeRoom($this->requireRoomById((int) $room['id'])),
+                'room' => $this->serializeRoom($this->requireRoomById((int) $room['id']), $browserId),
                 'presence' => $this->presenceForRoom((int) $room['id']),
             ];
         } catch (Throwable $throwable) {
@@ -177,6 +217,7 @@ class RoomService
 
         return [
             'message' => $this->loadMessageById($messageId, $browserId),
+            'room' => $this->serializeRoom($this->requireRoomById((int) $message['room_id']), $browserId),
             'presence' => $this->presenceForRoom((int) $message['room_id']),
         ];
     }
@@ -230,6 +271,7 @@ class RoomService
 
         return [
             'message' => $this->loadMessageById($messageId, $browserId),
+            'room' => $this->serializeRoom($this->requireRoomById((int) $message['room_id']), $browserId),
             'presence' => $this->presenceForRoom((int) $message['room_id']),
         ];
     }
@@ -315,7 +357,7 @@ class RoomService
         return count($roomIds);
     }
 
-    private function createRoom(): array
+    private function createRoom(string $browserId): array
     {
         $activeCount = (int) $this->pdo->query('SELECT COUNT(*) FROM rooms')->fetchColumn();
 
@@ -332,11 +374,13 @@ class RoomService
 
             try {
                 $statement = $this->pdo->prepare(
-                    'INSERT INTO rooms (code, created_at, updated_at, last_activity_at, expires_at)
-                     VALUES (:code, :created_at, :updated_at, :last_activity_at, :expires_at)'
+                    'INSERT INTO rooms (code, name, creator_browser_id, created_at, updated_at, last_activity_at, expires_at)
+                     VALUES (:code, :name, :creator_browser_id, :created_at, :updated_at, :last_activity_at, :expires_at)'
                 );
                 $statement->execute([
                     'code' => $code,
+                    'name' => null,
+                    'creator_browser_id' => $browserId,
                     'created_at' => $now,
                     'updated_at' => $now,
                     'last_activity_at' => $now,
@@ -380,6 +424,7 @@ class RoomService
             throw new ApiException('ابتدا باید وارد اتاق شوید.', 403);
         }
 
+        $room = $this->claimCreatorIfMissing($room, $browserId);
         $now = $this->now();
         $this->touchParticipant((int) $room['id'], $browserId, $now);
 
@@ -469,7 +514,7 @@ class RoomService
             'onlineCount' => count($rows),
             'participants' => array_map(
                 static fn (array $row): string => (string) $row['display_name'],
-                array_slice($rows, 0, 2)
+                $rows
             ),
         ];
     }
@@ -486,6 +531,23 @@ class RoomService
 
         if (mb_strlen($trimmed) > $maxLength) {
             throw new ApiException("نام نمایشی باید حداکثر {$maxLength} کاراکتر باشد.", 422);
+        }
+
+        return $trimmed;
+    }
+
+    private function sanitizeRoomName(string $roomName): string
+    {
+        $trimmed = trim(preg_replace('/\s+/u', ' ', $roomName) ?? '');
+
+        if ($trimmed === '') {
+            throw new ApiException('Ù„Ø·ÙØ§ ÛŒÚ© Ù†Ø§Ù… Ø¨Ø±Ø§ÛŒ Ø§ØªØ§Ù‚ ÙˆØ§Ø±Ø¯ Ú©Ù†ÛŒØ¯.', 422);
+        }
+
+        $maxLength = (int) app_config('app.max_room_name_length', 80);
+
+        if (mb_strlen($trimmed) > $maxLength) {
+            throw new ApiException("Ù†Ø§Ù… Ø§ØªØ§Ù‚ Ø¨Ø§ÛŒØ¯ Ø­Ø¯Ø§Ú©Ø«Ø± {$maxLength} Ú©Ø§Ø±Ø§Ú©ØªØ± Ø¨Ø§Ø´Ø¯.", 422);
         }
 
         return $trimmed;
@@ -849,14 +911,113 @@ class RoomService
         return $lastMessage['updatedAt'];
     }
 
-    private function serializeRoom(array $room): array
+    private function serializeRoom(array $room, ?string $browserId = null): array
     {
+        $creatorBrowserId = trim((string) ($room['creator_browser_id'] ?? ''));
+
         return [
             'id' => (int) $room['id'],
             'code' => $room['code'],
+            'name' => ($room['name'] ?? null) === null || trim((string) $room['name']) === '' ? null : (string) $room['name'],
+            'isCreator' => $browserId !== null && $creatorBrowserId !== '' && hash_equals($creatorBrowserId, $browserId),
             'lastActivityAt' => $room['last_activity_at'],
             'expiresAt' => $room['expires_at'],
         ];
+    }
+
+    private function ensureSchema(): void
+    {
+        if (self::$schemaEnsured) {
+            return;
+        }
+
+        if (!$this->columnExists('rooms', 'name')) {
+            $this->pdo->exec('ALTER TABLE rooms ADD COLUMN name VARCHAR(80) NULL AFTER code');
+        }
+
+        if (!$this->columnExists('rooms', 'creator_browser_id')) {
+            $this->pdo->exec('ALTER TABLE rooms ADD COLUMN creator_browser_id CHAR(64) NULL AFTER name');
+            $this->pdo->exec('ALTER TABLE rooms ADD KEY rooms_creator_browser_index (creator_browser_id)');
+        }
+
+        $this->pdo->exec(
+            'UPDATE rooms
+             INNER JOIN (
+                SELECT participants.room_id, participants.browser_id
+                FROM participants
+                INNER JOIN (
+                    SELECT room_id, MIN(id) AS first_participant_id
+                    FROM participants
+                    GROUP BY room_id
+                ) AS first_participants
+                    ON first_participants.first_participant_id = participants.id
+             ) AS creators
+                ON creators.room_id = rooms.id
+             SET rooms.creator_browser_id = creators.browser_id
+             WHERE rooms.creator_browser_id IS NULL OR rooms.creator_browser_id = ""'
+        );
+
+        self::$schemaEnsured = true;
+    }
+
+    private function columnExists(string $table, string $column): bool
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT COUNT(*)
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = :table_name
+               AND COLUMN_NAME = :column_name'
+        );
+        $statement->execute([
+            'table_name' => $table,
+            'column_name' => $column,
+        ]);
+
+        return (int) $statement->fetchColumn() > 0;
+    }
+
+    private function applyAutomaticRoomName(int $roomId, array $room, string $browserId, string $displayName): void
+    {
+        $creatorBrowserId = trim((string) ($room['creator_browser_id'] ?? ''));
+        $roomName = trim((string) ($room['name'] ?? ''));
+
+        if ($roomName !== '' || $creatorBrowserId === '' || hash_equals($creatorBrowserId, $browserId)) {
+            return;
+        }
+
+        $statement = $this->pdo->prepare(
+            'UPDATE rooms
+             SET name = :name
+             WHERE id = :id
+               AND (name IS NULL OR name = "")'
+        );
+        $statement->execute([
+            'name' => $displayName,
+            'id' => $roomId,
+        ]);
+    }
+
+    private function claimCreatorIfMissing(array $room, string $browserId): array
+    {
+        $creatorBrowserId = trim((string) ($room['creator_browser_id'] ?? ''));
+
+        if ($creatorBrowserId !== '') {
+            return $room;
+        }
+
+        $statement = $this->pdo->prepare(
+            'UPDATE rooms
+             SET creator_browser_id = :creator_browser_id
+             WHERE id = :id
+               AND (creator_browser_id IS NULL OR creator_browser_id = "")'
+        );
+        $statement->execute([
+            'creator_browser_id' => $browserId,
+            'id' => (int) $room['id'],
+        ]);
+
+        return $this->requireRoomById((int) $room['id']);
     }
 
     private function now(): string

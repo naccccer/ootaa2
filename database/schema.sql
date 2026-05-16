@@ -1,12 +1,15 @@
 CREATE TABLE IF NOT EXISTS rooms (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     code CHAR(4) NOT NULL,
+    name VARCHAR(80) NULL,
+    creator_browser_id CHAR(64) NULL,
     created_at DATETIME(6) NOT NULL,
     updated_at DATETIME(6) NOT NULL,
     last_activity_at DATETIME(6) NOT NULL,
     expires_at DATETIME(6) NOT NULL,
     UNIQUE KEY rooms_code_unique (code),
-    KEY rooms_expires_at_index (expires_at)
+    KEY rooms_expires_at_index (expires_at),
+    KEY rooms_creator_browser_index (creator_browser_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS participants (
