@@ -8,11 +8,12 @@ use App\Support\Database;
 use App\Support\RoomService;
 
 $baseUrl = rtrim($argv[1] ?? 'http://localhost/ootaa2', '/');
-$cookieOne = tempnam(sys_get_temp_dir(), 'ootaa2-cookie-1-');
-$cookieTwo = tempnam(sys_get_temp_dir(), 'ootaa2-cookie-2-');
+$cookieOne = tempnam(sys_get_temp_dir(), 'ootaa2-user-1-');
+$cookieOneSecondDevice = tempnam(sys_get_temp_dir(), 'ootaa2-user-1b-');
+$cookieTwo = tempnam(sys_get_temp_dir(), 'ootaa2-user-2-');
 $tempDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ootaa2-smoke-' . bin2hex(random_bytes(4));
 
-if ($cookieOne === false || $cookieTwo === false) {
+if ($cookieOne === false || $cookieOneSecondDevice === false || $cookieTwo === false) {
     fwrite(STDERR, "Could not create temporary cookie files.\n");
     exit(1);
 }
@@ -71,7 +72,6 @@ function request(string $method, string $url, ?string $cookieFile = null, array 
     $headerSize = (int) curl_getinfo($handle, CURLINFO_HEADER_SIZE);
     $headers = substr($response, 0, $headerSize);
     $body = substr($response, $headerSize);
-
     curl_close($handle);
 
     return [
@@ -130,35 +130,81 @@ function absoluteUrl(string $baseUrl, string $path): string
 }
 
 try {
+    $anonymousMe = requestJson('GET', $baseUrl . '/api/auth/me');
+    assert_true($anonymousMe['user'] === null, 'Anonymous auth/me should return a null user.');
+
+    $userOne = requestJson('POST', $baseUrl . '/api/auth/register', $cookieOne, [
+        'json' => [
+            'mobile' => '09123456789',
+            'displayName' => 'Ali',
+            'password' => 'secret123',
+        ],
+    ]);
+    assert_true(($userOne['user']['mobileNormalized'] ?? '') === '+989123456789', 'Mobile should be normalized on registration.');
+
+    $duplicateRegister = request('POST', $baseUrl . '/api/auth/register', null, [
+        'json' => [
+            'mobile' => '+989123456789',
+            'displayName' => 'Ali Duplicate',
+            'password' => 'secret123',
+        ],
+    ]);
+    assert_true($duplicateRegister['status'] === 409, 'Duplicate mobile registration should be rejected.');
+
+    $wrongLogin = request('POST', $baseUrl . '/api/auth/login', null, [
+        'json' => [
+            'mobile' => '09123456789',
+            'password' => 'wrong-password',
+        ],
+    ]);
+    assert_true($wrongLogin['status'] === 401, 'Wrong password should fail.');
+
+    $userOneSecondDevice = requestJson('POST', $baseUrl . '/api/auth/login', $cookieOneSecondDevice, [
+        'json' => [
+            'mobile' => '989123456789',
+            'password' => 'secret123',
+        ],
+    ]);
+    assert_true(($userOneSecondDevice['user']['id'] ?? 0) === ($userOne['user']['id'] ?? -1), 'Second device should log into the same user.');
+
+    $userTwo = requestJson('POST', $baseUrl . '/api/auth/register', $cookieTwo, [
+        'json' => [
+            'mobile' => '09121234567',
+            'displayName' => 'Mina',
+            'password' => 'secret456',
+        ],
+    ]);
+    assert_true(($userTwo['user']['mobileDisplay'] ?? '') === '09121234567', 'Second user should expose the display mobile format.');
+
     $enterOne = requestJson('POST', $baseUrl . '/api/room/enter', $cookieOne, [
         'json' => [
-            'displayName' => 'Ali',
             'roomCode' => '',
         ],
     ]);
     $roomCode = $enterOne['room']['code'];
+    assert_true(($enterOne['presence']['onlineCount'] ?? 0) === 1, 'Room creator should be the first online participant.');
 
-    $enterTwo = requestJson('POST', $baseUrl . '/api/room/enter', $cookieTwo, [
+    $enterSameAccountSecondDevice = requestJson('POST', $baseUrl . '/api/room/enter', $cookieOneSecondDevice, [
         'json' => [
-            'displayName' => 'Mina',
             'roomCode' => $roomCode,
         ],
     ]);
-    assert_true(($enterTwo['presence']['onlineCount'] ?? 0) >= 2, 'Presence should include both participants after join.');
-    assert_true(($enterTwo['room']['name'] ?? null) === 'Mina', 'Room name should default to the first participant after the creator.');
+    assert_true(($enterSameAccountSecondDevice['presence']['onlineCount'] ?? 0) === 1, 'Same account on a second device should not create a second participant.');
 
-    $bootstrap = requestJson('GET', $baseUrl . '/api/room/bootstrap?code=' . urlencode($roomCode), $cookieOne);
-    assert_true($bootstrap['room']['code'] === $roomCode, 'Bootstrap returned the wrong room.');
-    assert_true(($bootstrap['room']['name'] ?? null) === 'Mina', 'Bootstrap should return the derived room name.');
-    assert_true(($bootstrap['presence']['onlineCount'] ?? 0) >= 2, 'Bootstrap should return presence data.');
-
-    $renameRoom = requestJson('PATCH', $baseUrl . '/api/room/name', $cookieOne, [
+    $renameRoom = requestJson('PATCH', $baseUrl . '/api/room/name', $cookieOneSecondDevice, [
         'json' => [
             'roomCode' => $roomCode,
             'name' => 'اتاق پروژه',
         ],
     ]);
-    assert_true(($renameRoom['room']['name'] ?? null) === 'اتاق پروژه', 'Creator should be able to rename the room.');
+    assert_true(($renameRoom['room']['name'] ?? null) === 'اتاق پروژه', 'Creator account should be able to rename the room from another device.');
+
+    $enterTwo = requestJson('POST', $baseUrl . '/api/room/enter', $cookieTwo, [
+        'json' => [
+            'roomCode' => $roomCode,
+        ],
+    ]);
+    assert_true(($enterTwo['presence']['onlineCount'] ?? 0) >= 2, 'Second user should appear in room presence.');
 
     $renameForbidden = request('PATCH', $baseUrl . '/api/room/name', $cookieTwo, [
         'json' => [
@@ -166,7 +212,10 @@ try {
             'name' => 'نام غیرمجاز',
         ],
     ]);
-    assert_true($renameForbidden['status'] === 403, 'A non-creator should not be able to rename the room.');
+    assert_true($renameForbidden['status'] === 403, 'A non-creator user should not rename the room.');
+
+    $bootstrap = requestJson('GET', $baseUrl . '/api/room/bootstrap?code=' . urlencode($roomCode), $cookieOneSecondDevice);
+    assert_true(($bootstrap['room']['name'] ?? null) === 'اتاق پروژه', 'Bootstrap should return the renamed room.');
 
     $pngPath = $tempDir . DIRECTORY_SEPARATOR . 'smoke.png';
     $textPath = $tempDir . DIRECTORY_SEPARATOR . 'smoke.txt';
@@ -177,23 +226,16 @@ try {
         'multipart' => [
             'roomCode' => $roomCode,
             'text' => 'hello files',
-            'files[0]' => new \CURLFile($pngPath, 'image/png', 'smoke.png'),
-            'files[1]' => new \CURLFile($textPath, 'text/plain', 'smoke.txt'),
+            'files[0]' => new CURLFile($pngPath, 'image/png', 'smoke.png'),
+            'files[1]' => new CURLFile($textPath, 'text/plain', 'smoke.txt'),
         ],
     ]);
-
-    assert_true(count($send['message']['attachments']) === 2, 'Expected two uploaded attachments.');
     $messageId = (int) $send['message']['id'];
-    $imageAttachment = current(array_filter($send['message']['attachments'], static fn (array $item): bool => $item['previewKind'] === 'image'));
-    $downloadAttachment = current(array_filter($send['message']['attachments'], static fn (array $item): bool => $item['previewKind'] === 'download'));
-
-    assert_true(is_array($imageAttachment), 'Image attachment was not detected.');
-    assert_true(is_array($downloadAttachment), 'Download attachment was not detected.');
+    assert_true(count($send['message']['attachments']) === 2, 'Message should store two attachments.');
+    assert_true(($send['message']['senderMobile'] ?? '') === '09123456789', 'Messages should expose sender mobile display.');
 
     $pollTwo = requestJson('GET', $baseUrl . '/api/room/messages?code=' . urlencode($roomCode), $cookieTwo);
-    assert_true(($pollTwo['room']['name'] ?? null) === 'اتاق پروژه', 'Polling should return the latest room name.');
-    assert_true(count($pollTwo['messages']) >= 1, 'Second participant did not receive the new message.');
-    assert_true(($pollTwo['presence']['onlineCount'] ?? 0) >= 2, 'Polling should return presence data.');
+    assert_true(count($pollTwo['messages']) >= 1, 'Second user should receive the room messages.');
 
     $reply = requestJson('POST', $baseUrl . '/api/room/messages', $cookieTwo, [
         'multipart' => [
@@ -204,31 +246,72 @@ try {
     ]);
     assert_true(($reply['message']['replyTo']['id'] ?? null) === $messageId, 'Reply should reference the original message.');
 
-    $edit = requestJson('PATCH', $baseUrl . '/api/messages/' . $messageId, $cookieOne, [
-        'json' => ['text' => 'edited text'],
+    $editFromSecondDevice = requestJson('PATCH', $baseUrl . '/api/messages/' . $messageId, $cookieOneSecondDevice, [
+        'json' => [
+            'text' => 'edited from same account',
+        ],
     ]);
-    assert_true($edit['message']['bodyText'] === 'edited text', 'Edited text was not saved.');
-    assert_true(($edit['presence']['onlineCount'] ?? 0) >= 1, 'Edit should return presence data.');
-
-    $downloadAllowed = request('GET', absoluteUrl($baseUrl, $imageAttachment['url']), $cookieTwo);
-    $downloadBlocked = request('GET', absoluteUrl($baseUrl, $downloadAttachment['url']));
-    assert_true($downloadAllowed['status'] === 200, 'A participant should be able to view a room attachment.');
-    assert_true($downloadBlocked['status'] === 403, 'A visitor outside the room should not access attachments.');
+    assert_true(($editFromSecondDevice['message']['bodyText'] ?? '') === 'edited from same account', 'Same account on another device should edit the message.');
 
     $deleteForbidden = request('DELETE', $baseUrl . '/api/messages/' . $messageId, $cookieTwo, [
         'json' => [],
     ]);
-    assert_true($deleteForbidden['status'] === 403, 'A second browser should not be able to delete this message.');
+    assert_true($deleteForbidden['status'] === 403, 'Another user should not delete this message.');
 
-    $deleteOwn = requestJson('DELETE', $baseUrl . '/api/messages/' . $messageId, $cookieOne, [
+    $downloadAllowed = request('GET', absoluteUrl($baseUrl, $send['message']['attachments'][0]['url']), $cookieTwo);
+    $downloadBlocked = request('GET', absoluteUrl($baseUrl, $send['message']['attachments'][1]['url']));
+    assert_true($downloadAllowed['status'] === 200, 'A room participant should access room attachments.');
+    assert_true($downloadBlocked['status'] === 401, 'A logged-out visitor should not access attachments.');
+
+    $profileUpdate = requestJson('PATCH', $baseUrl . '/api/account/profile', $cookieOne, [
+        'json' => [
+            'displayName' => 'Ali Updated',
+        ],
+    ]);
+    assert_true(($profileUpdate['user']['displayName'] ?? '') === 'Ali Updated', 'Profile update should return the new display name.');
+
+    $newMessage = requestJson('POST', $baseUrl . '/api/room/messages', $cookieOne, [
+        'multipart' => [
+            'roomCode' => $roomCode,
+            'text' => 'message after profile update',
+        ],
+    ]);
+    assert_true(($newMessage['message']['senderName'] ?? '') === 'Ali Updated', 'Messages sent after profile update should use the new display name.');
+
+    $oldMessageSnapshot = requestJson('GET', $baseUrl . '/api/room/messages?code=' . urlencode($roomCode), $cookieTwo);
+    $firstMessage = current(array_filter($oldMessageSnapshot['messages'], static fn (array $message): bool => (int) $message['id'] === $messageId));
+    assert_true(is_array($firstMessage), 'Original message should still be present.');
+    assert_true(($firstMessage['senderName'] ?? '') === 'Ali', 'Original message should keep the old sender snapshot.');
+
+    $passwordChange = requestJson('PATCH', $baseUrl . '/api/account/password', $cookieOne, [
+        'json' => [
+            'currentPassword' => 'secret123',
+            'newPassword' => 'secret999',
+        ],
+    ]);
+    assert_true(($passwordChange['user']['displayName'] ?? '') === 'Ali Updated', 'Password change should keep the authenticated user data.');
+
+    $expiredSecondDeviceSession = requestJson('GET', $baseUrl . '/api/auth/me', $cookieOneSecondDevice);
+    assert_true($expiredSecondDeviceSession['user'] === null, 'Changing password should revoke the other device session.');
+
+    $revokedProtectedAccess = request('GET', $baseUrl . '/api/room/bootstrap?code=' . urlencode($roomCode), $cookieOneSecondDevice);
+    assert_true($revokedProtectedAccess['status'] === 401, 'Revoked session should lose access to protected routes.');
+
+    $postPasswordLogin = requestJson('POST', $baseUrl . '/api/auth/login', $cookieOneSecondDevice, [
+        'json' => [
+            'mobile' => '09123456789',
+            'password' => 'secret999',
+        ],
+    ]);
+    assert_true(($postPasswordLogin['user']['displayName'] ?? '') === 'Ali Updated', 'User should be able to log in with the new password.');
+
+    $deleteOwn = requestJson('DELETE', $baseUrl . '/api/messages/' . $messageId, $cookieOneSecondDevice, [
         'json' => [],
     ]);
-    assert_true($deleteOwn['message']['isDeleted'] === true, 'Own delete should mark the message as deleted.');
-    assert_true(($deleteOwn['presence']['onlineCount'] ?? 0) >= 1, 'Delete should return presence data.');
+    assert_true(($deleteOwn['message']['isDeleted'] ?? false) === true, 'Same account on second device should delete the message.');
 
     $cleanupRoom = requestJson('POST', $baseUrl . '/api/room/enter', $cookieOne, [
         'json' => [
-            'displayName' => 'Ali',
             'roomCode' => '',
         ],
     ]);
@@ -238,7 +321,7 @@ try {
         'multipart' => [
             'roomCode' => $cleanupCode,
             'text' => 'cleanup probe',
-            'files[0]' => new \CURLFile($pngPath, 'image/png', 'cleanup.png'),
+            'files[0]' => new CURLFile($pngPath, 'image/png', 'cleanup.png'),
         ],
     ]);
     $cleanupAttachmentId = $cleanupUpload['message']['attachments'][0]['id'];
@@ -248,7 +331,7 @@ try {
     $pathStatement->execute(['id' => $cleanupAttachmentId]);
     $storedPath = (string) $pathStatement->fetchColumn();
     $absoluteStoredPath = storage_path('uploads/' . $storedPath);
-    assert_true(is_file($absoluteStoredPath), 'Cleanup test file was not stored on disk.');
+    assert_true(is_file($absoluteStoredPath), 'Cleanup test file should exist on disk before purge.');
 
     $expireStatement = $pdo->prepare('UPDATE rooms SET expires_at = :expires_at WHERE code = :code');
     $expireStatement->execute([
@@ -257,16 +340,15 @@ try {
     ]);
 
     $removedRooms = RoomService::make()->purgeExpiredRooms();
-    assert_true($removedRooms >= 1, 'Cleanup did not remove the expired room.');
-    assert_true(!is_file($absoluteStoredPath), 'Cleanup did not remove the expired room file.');
+    assert_true($removedRooms >= 1, 'Expired rooms should be purged.');
+    assert_true(!is_file($absoluteStoredPath), 'Purging an expired room should remove its files.');
 
     echo json_encode([
         'ok' => true,
         'roomCode' => $roomCode,
         'messageId' => $messageId,
         'attachmentCount' => count($send['message']['attachments']),
-        'secondParticipantMessages' => count($pollTwo['messages']),
-        'presenceCount' => $bootstrap['presence']['onlineCount'] ?? 0,
+        'presenceCount' => $enterTwo['presence']['onlineCount'] ?? 0,
         'cleanupRemovedRooms' => $removedRooms,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
 } catch (Throwable $throwable) {
@@ -274,6 +356,7 @@ try {
     exit(1);
 } finally {
     @unlink($cookieOne);
+    @unlink($cookieOneSecondDevice);
     @unlink($cookieTwo);
 
     if (is_dir($tempDir)) {

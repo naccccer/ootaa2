@@ -5,11 +5,12 @@ declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 
 use App\Support\ApiException;
-use App\Support\BrowserSession;
+use App\Support\AuthService;
 use App\Support\RoomService;
 
 try {
-    $browserId = BrowserSession::ensureBrowserId();
+    $auth = AuthService::make();
+    $user = $auth->requireAuthenticatedUser();
     $attachmentId = preg_replace('/[^a-f0-9]/', '', (string) ($_GET['id'] ?? ''));
 
     if ($attachmentId === '') {
@@ -17,7 +18,7 @@ try {
     }
 
     $service = RoomService::make();
-    $file = $service->attachmentForDownload($attachmentId, $browserId);
+    $file = $service->attachmentForDownload($attachmentId, (int) $user['id']);
     $absolutePath = storage_path('uploads/' . $file['path']);
 
     if (!is_file($absolutePath)) {

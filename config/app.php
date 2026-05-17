@@ -22,13 +22,16 @@ return [
         'debug' => filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOL),
         'base_path' => $basePath,
         'room_expiry_seconds' => 60 * 60 * 24 * 7,
+        'presence_window_seconds' => 120,
         'max_display_name_length' => 40,
         'max_room_name_length' => 80,
         'max_message_length' => 4000,
         'recent_messages_limit' => 60,
-        'cookie_name' => getenv('APP_BROWSER_COOKIE') ?: 'ootaa_browser',
-        'cookie_ttl_days' => 180,
         'upload_dir' => storage_path('uploads'),
+    ],
+    'auth' => [
+        'cookie_name' => getenv('APP_AUTH_COOKIE') ?: 'ootaa_auth',
+        'session_ttl_seconds' => 60 * 60 * 24 * 30,
     ],
     'db' => [
         'host' => getenv('DB_HOST') ?: ($isLocalEnvironment ? '127.0.0.1' : 'localhost'),
