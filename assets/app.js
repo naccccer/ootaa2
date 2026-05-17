@@ -545,12 +545,17 @@
     }
 
     function getRoomDisplayName(room = state.room) {
-        if (!room?.code) {
+        const roomCode = room?.code || room?.roomCode;
+
+        if (!roomCode) {
             return "اتاق ----";
         }
 
-        const customName = String(room.name || "").trim();
-        return customName || `اتاق ${room.code}`;
+        const rememberedRoom = getRecentRooms().find((item) => item.roomCode === roomCode);
+        const customName = String(rememberedRoom?.customRoomName || "").trim();
+        const roomName = String(room?.name || room?.roomName || "").trim();
+
+        return customName || roomName || `اتاق ${roomCode}`;
     }
 
     function canEditRoomName() {
@@ -1431,7 +1436,13 @@
         writeRecentRooms(nextRooms);
         state.recentRoomRenameCode = "";
         state.recentRoomRenameDraft = "";
-        renderRecentRooms();
+
+        if (state.room?.code === roomCode) {
+            renderShell();
+        } else {
+            renderRecentRooms();
+        }
+
         setStatus(dom.chatStatus, "Ù†Ø§Ù… Ú¯ÙØªÚ¯Ùˆ Ø¨Ù‡â€ŒØ±ÙˆØ² Ø´Ø¯.", false, false);
     }
 
@@ -1539,7 +1550,7 @@
 
         if (isInRoom) {
             dom.roomAvatar.textContent = "";
-            dom.roomAvatar.setAttribute("style", getAvatarPalette(state.room.name || state.room.code));
+            dom.roomAvatar.setAttribute("style", getAvatarPalette(getRoomDisplayName(state.room) || state.room.code));
             renderRoomNameControls();
         }
 
