@@ -30,7 +30,16 @@
         roomLongPressTimer: null,
         contactSearchTimer: null,
         roomContextOpenedByPress: false,
-        busy: false
+        busy: false,
+        authOtpFlow: {
+            purpose: null,
+            step: "request",
+            mobile: "",
+            displayName: "",
+            registerPassword: "",
+            cooldownUntil: 0
+        },
+        authOtpCooldownTimer: null
     };
 
     const dom = {
@@ -47,6 +56,8 @@
         registerPasswordInput: document.getElementById("registerPasswordInput"),
         loginSubmitButton: document.getElementById("loginSubmitButton"),
         registerSubmitButton: document.getElementById("registerSubmitButton"),
+        loginOtpButton: document.getElementById("loginOtpButton"),
+        forgotPasswordButton: document.getElementById("forgotPasswordButton"),
         authStatus: document.getElementById("authStatus"),
         registerNameDialog: document.getElementById("registerNameDialog"),
         registerNameForm: document.getElementById("registerNameForm"),
@@ -66,6 +77,22 @@
         closeGuestAuthDialogButton: document.getElementById("closeGuestAuthDialogButton"),
         submitGuestAuthButton: document.getElementById("submitGuestAuthButton"),
         guestAuthStatus: document.getElementById("guestAuthStatus"),
+        authOtpDialog: document.getElementById("authOtpDialog"),
+        authOtpForm: document.getElementById("authOtpForm"),
+        authOtpTitle: document.getElementById("authOtpTitle"),
+        authOtpDescription: document.getElementById("authOtpDescription"),
+        authOtpMobileField: document.getElementById("authOtpMobileField"),
+        authOtpMobileInput: document.getElementById("authOtpMobileInput"),
+        authOtpCodeField: document.getElementById("authOtpCodeField"),
+        authOtpCodeInput: document.getElementById("authOtpCodeInput"),
+        authOtpDisplayNameField: document.getElementById("authOtpDisplayNameField"),
+        authOtpDisplayNameInput: document.getElementById("authOtpDisplayNameInput"),
+        authOtpPasswordField: document.getElementById("authOtpPasswordField"),
+        authOtpPasswordInput: document.getElementById("authOtpPasswordInput"),
+        closeAuthOtpDialogButton: document.getElementById("closeAuthOtpDialogButton"),
+        authOtpResendButton: document.getElementById("authOtpResendButton"),
+        submitAuthOtpButton: document.getElementById("submitAuthOtpButton"),
+        authOtpStatus: document.getElementById("authOtpStatus"),
         accountName: document.getElementById("accountName"),
         accountMobile: document.getElementById("accountMobile"),
         openAccountMenuButton: document.getElementById("openAccountMenuButton"),
@@ -959,6 +986,160 @@
         setStatus(dom.authStatus, "", false);
     }
 
+    function startAuthOtpCooldown(seconds) {
+        state.authOtpFlow.cooldownUntil = Date.now() + (Math.max(0, Number(seconds || 0)) * 1000);
+        window.clearInterval(state.authOtpCooldownTimer);
+
+        if (seconds > 0) {
+            state.authOtpCooldownTimer = window.setInterval(() => {
+                renderAuthOtpDialog();
+
+                if (getAuthOtpCooldownSeconds() <= 0) {
+                    window.clearInterval(state.authOtpCooldownTimer);
+                    state.authOtpCooldownTimer = null;
+                }
+            }, 1000);
+        }
+    }
+
+    function getAuthOtpCooldownSeconds() {
+        if (!state.authOtpFlow.cooldownUntil) {
+            return 0;
+        }
+
+        return Math.max(0, Math.ceil((state.authOtpFlow.cooldownUntil - Date.now()) / 1000));
+    }
+
+    function getAuthOtpCopy() {
+        const purpose = state.authOtpFlow.purpose;
+        const step = state.authOtpFlow.step;
+
+        if (purpose === "register") {
+            return step === "request"
+                ? {
+                    title: "ثبت‌نام با کد",
+                    description: "برای ساخت حساب، شماره موبایل را تایید می‌کنیم.",
+                    submitLabel: "ارسال کد"
+                }
+                : {
+                    title: "تایید ثبت‌نام",
+                    description: "کد ارسال‌شده را وارد کنید تا حساب ساخته شود.",
+                    submitLabel: "تکمیل ثبت‌نام"
+                };
+        }
+
+        if (purpose === "password_reset") {
+            return step === "request"
+                ? {
+                    title: "بازیابی رمز",
+                    description: "کد تایید برای این شماره ارسال می‌شود.",
+                    submitLabel: "ارسال کد"
+                }
+                : {
+                    title: "ثبت رمز جدید",
+                    description: "کد تایید و رمز جدید را وارد کنید.",
+                    submitLabel: "ثبت رمز جدید"
+                };
+        }
+
+        if (step === "profile") {
+            return {
+                title: "تکمیل حساب",
+                description: "برای ورود با این شماره، نام خود را وارد کنید.",
+                submitLabel: "ساخت حساب"
+            };
+        }
+
+        return step === "request"
+            ? {
+                title: "ورود با کد",
+                description: "کد تایید برای ورود به این شماره ارسال می‌شود.",
+                submitLabel: "ارسال کد"
+            }
+            : {
+                title: "تایید ورود",
+                description: "کد ارسال‌شده را وارد کنید.",
+                submitLabel: "ورود"
+            };
+    }
+
+    function renderAuthOtpDialog() {
+        const copy = getAuthOtpCopy();
+        const purpose = state.authOtpFlow.purpose;
+        const step = state.authOtpFlow.step;
+        const cooldownSeconds = getAuthOtpCooldownSeconds();
+        const isVerifyLike = step === "verify" || step === "reset";
+
+        dom.authOtpTitle.textContent = copy.title;
+        dom.authOtpDescription.textContent = copy.description;
+        dom.submitAuthOtpButton.textContent = copy.submitLabel;
+        dom.authOtpMobileField.hidden = step !== "request";
+        dom.authOtpCodeField.hidden = !isVerifyLike;
+        dom.authOtpDisplayNameField.hidden = step !== "profile";
+        dom.authOtpPasswordField.hidden = step !== "reset";
+        dom.authOtpMobileInput.value = state.authOtpFlow.mobile || dom.authOtpMobileInput.value;
+        dom.authOtpDisplayNameInput.value = state.authOtpFlow.displayName || dom.authOtpDisplayNameInput.value;
+        dom.authOtpResendButton.hidden = !isVerifyLike;
+        dom.authOtpResendButton.disabled = cooldownSeconds > 0;
+        dom.authOtpResendButton.textContent = cooldownSeconds > 0
+            ? `ارسال مجدد تا ${new Intl.NumberFormat("fa-IR").format(cooldownSeconds)}`
+            : "ارسال مجدد";
+
+        if (purpose === "password_reset") {
+            dom.authOtpPasswordInput.autocomplete = "new-password";
+        }
+    }
+
+    function resetAuthOtpFlow() {
+        window.clearInterval(state.authOtpCooldownTimer);
+        state.authOtpCooldownTimer = null;
+        state.authOtpFlow = {
+            purpose: null,
+            step: "request",
+            mobile: "",
+            displayName: "",
+            registerPassword: "",
+            cooldownUntil: 0
+        };
+        dom.authOtpForm.reset();
+        setStatus(dom.authOtpStatus, "", false);
+    }
+
+    function openAuthOtpDialog(purpose, options = {}) {
+        state.authOtpFlow.purpose = purpose;
+        state.authOtpFlow.step = options.step || "request";
+        state.authOtpFlow.mobile = options.mobile || "";
+        state.authOtpFlow.displayName = options.displayName || "";
+        state.authOtpFlow.registerPassword = options.registerPassword || "";
+        state.authOtpFlow.cooldownUntil = 0;
+        dom.authOtpForm.reset();
+        dom.authOtpMobileInput.value = state.authOtpFlow.mobile;
+        dom.authOtpDisplayNameInput.value = state.authOtpFlow.displayName;
+        setStatus(dom.authOtpStatus, "", false);
+        renderAuthOtpDialog();
+
+        if (!dom.authOtpDialog.open) {
+            dom.authOtpDialog.showModal();
+        }
+
+        const target = state.authOtpFlow.step === "request"
+            ? dom.authOtpMobileInput
+            : (state.authOtpFlow.step === "profile" ? dom.authOtpDisplayNameInput : dom.authOtpCodeInput);
+
+        window.setTimeout(() => target.focus(), 20);
+    }
+
+    async function finishAuthenticatedUser(user) {
+        state.user = user;
+        renderShell();
+
+        if (appConfig.initialRoom) {
+            await enterRoom(appConfig.initialRoom, true);
+        } else if (getActiveRoomCode()) {
+            await enterRoom(getActiveRoomCode(), true);
+        }
+    }
+
     function renderShell() {
         const loggedIn = Boolean(state.user);
         const awaitingGuestName = !loggedIn && Boolean(appConfig.initialRoom);
@@ -1679,14 +1860,7 @@
                 method: "POST",
                 body: JSON.stringify(Object.fromEntries(formData.entries()))
             });
-            state.user = data.user;
-            renderShell();
-
-            if (appConfig.initialRoom) {
-                await enterRoom(appConfig.initialRoom, true);
-            } else if (getActiveRoomCode()) {
-                await enterRoom(getActiveRoomCode(), true);
-            }
+            await finishAuthenticatedUser(data.user);
 
             return true;
         } catch (error) {
@@ -1760,6 +1934,141 @@
         } finally {
             state.busy = false;
             renderComposerState();
+        }
+    }
+
+    async function requestCurrentAuthOtp() {
+        const purpose = state.authOtpFlow.purpose;
+        const mobile = dom.authOtpMobileInput.value.trim();
+        const payload = { mobile };
+        let endpoint = "/api/auth/login/request-otp";
+
+        if (purpose === "register") {
+            payload.displayName = state.authOtpFlow.displayName;
+            payload.password = state.authOtpFlow.registerPassword;
+            endpoint = "/api/auth/register/request-otp";
+        } else if (purpose === "password_reset") {
+            endpoint = "/api/auth/password/request-otp";
+        }
+
+        const data = await fetchJson(apiPath(endpoint), {
+            method: "POST",
+            preserveUnauthorized: true,
+            body: JSON.stringify(payload)
+        });
+
+        state.authOtpFlow.mobile = mobile;
+        state.authOtpFlow.step = purpose === "password_reset" ? "reset" : "verify";
+        startAuthOtpCooldown(data.cooldownSeconds || 0);
+        renderAuthOtpDialog();
+        setStatus(dom.authOtpStatus, "کد ارسال شد.", false);
+    }
+
+    async function submitAuthOtp(event) {
+        event.preventDefault();
+        state.busy = true;
+        renderComposerState();
+        setStatus(dom.authOtpStatus, "", false);
+
+        try {
+            const purpose = state.authOtpFlow.purpose;
+            const mobile = state.authOtpFlow.step === "request"
+                ? dom.authOtpMobileInput.value.trim()
+                : state.authOtpFlow.mobile;
+
+            if (state.authOtpFlow.step === "request") {
+                await requestCurrentAuthOtp();
+                return;
+            }
+
+            if (purpose === "login" && state.authOtpFlow.step === "verify") {
+                const data = await fetchJson(apiPath("/api/auth/login/verify-otp"), {
+                    method: "POST",
+                    preserveUnauthorized: true,
+                    body: JSON.stringify({
+                        mobile,
+                        code: dom.authOtpCodeInput.value.trim()
+                    })
+                });
+
+                if (data.needsProfile) {
+                    state.authOtpFlow.mobile = mobile;
+                    state.authOtpFlow.step = "profile";
+                    renderAuthOtpDialog();
+                    setStatus(dom.authOtpStatus, "برای تکمیل حساب، نام خود را وارد کنید.", false);
+                    return;
+                }
+
+                closeDialogAnimated(dom.authOtpDialog, resetAuthOtpFlow);
+                await finishAuthenticatedUser(data.user);
+                return;
+            }
+
+            if (purpose === "login" && state.authOtpFlow.step === "profile") {
+                const data = await fetchJson(apiPath("/api/auth/login/complete-profile"), {
+                    method: "POST",
+                    preserveUnauthorized: true,
+                    body: JSON.stringify({
+                        mobile,
+                        displayName: dom.authOtpDisplayNameInput.value.trim()
+                    })
+                });
+                closeDialogAnimated(dom.authOtpDialog, resetAuthOtpFlow);
+                await finishAuthenticatedUser(data.user);
+                return;
+            }
+
+            if (purpose === "register" && state.authOtpFlow.step === "verify") {
+                const data = await fetchJson(apiPath("/api/auth/register/confirm"), {
+                    method: "POST",
+                    preserveUnauthorized: true,
+                    body: JSON.stringify({
+                        mobile,
+                        code: dom.authOtpCodeInput.value.trim()
+                    })
+                });
+                closeDialogAnimated(dom.authOtpDialog, resetAuthOtpFlow);
+            setStatus(dom.registerNameStatus, "", false);
+                dom.registerForm.reset();
+                dom.registerNameInput.value = "";
+                await finishAuthenticatedUser(data.user);
+                return;
+            }
+
+            if (purpose === "password_reset" && state.authOtpFlow.step === "reset") {
+                const data = await fetchJson(apiPath("/api/auth/password/reset"), {
+                    method: "POST",
+                    preserveUnauthorized: true,
+                    body: JSON.stringify({
+                        mobile,
+                        code: dom.authOtpCodeInput.value.trim(),
+                        newPassword: dom.authOtpPasswordInput.value
+                    })
+                });
+                state.authOtpFlow.step = "request";
+                dom.loginPasswordInput.value = "";
+                closeDialogAnimated(dom.authOtpDialog, resetAuthOtpFlow);
+                setStatus(dom.authStatus, "رمز جدید ثبت شد. حالا می‌توانید وارد شوید.", false);
+                if (data.user?.mobileDisplay) {
+                    dom.loginMobileInput.value = data.user.mobileDisplay;
+                }
+                return;
+            }
+        } catch (error) {
+            setStatus(dom.authOtpStatus, error.message, true);
+        } finally {
+            state.busy = false;
+            renderComposerState();
+        }
+    }
+
+    async function resendAuthOtp() {
+        setStatus(dom.authOtpStatus, "", false);
+
+        try {
+            await requestCurrentAuthOtp();
+        } catch (error) {
+            setStatus(dom.authOtpStatus, error.message, true);
         }
     }
 
@@ -2456,6 +2765,16 @@
             event.preventDefault();
             handleAuthSubmit("login", dom.loginForm);
         });
+        dom.loginOtpButton.addEventListener("click", () => {
+            openAuthOtpDialog("login", {
+                mobile: dom.loginMobileInput.value.trim()
+            });
+        });
+        dom.forgotPasswordButton.addEventListener("click", () => {
+            openAuthOtpDialog("password_reset", {
+                mobile: dom.loginMobileInput.value.trim()
+            });
+        });
 
         dom.registerForm.addEventListener("submit", (event) => {
             event.preventDefault();
@@ -2559,13 +2878,26 @@
             }
 
             dom.registerNameInput.value = displayName;
-            const registered = await handleAuthSubmit("register", dom.registerForm);
+            state.busy = true;
 
-            if (registered) {
+            renderComposerState();
+            setStatus(dom.registerNameStatus, "", false);
+            try {
+                openAuthOtpDialog("register", {
+                    mobile: dom.registerMobileInput.value.trim(),
+                    displayName,
+                    registerPassword: dom.registerPasswordInput.value
+                });
+                await requestCurrentAuthOtp();
                 closeRegisterNameDialog();
-            } else {
-                setStatus(dom.registerNameStatus, dom.authStatus.textContent || "ثبت‌نام انجام نشد.", true);
+            } catch (error) {
+                setStatus(dom.registerNameStatus, error.message, true);
+                closeDialogAnimated(dom.authOtpDialog, resetAuthOtpFlow);
+            } finally {
+                state.busy = false;
+                renderComposerState();
             }
+            return;
         });
         dom.closeRegisterNameDialogButton.addEventListener("click", closeRegisterNameDialog);
         dom.guestNameForm.addEventListener("submit", (event) => {
@@ -2582,6 +2914,11 @@
         });
         dom.guestAuthForm.addEventListener("submit", submitGuestAuth);
         dom.closeGuestAuthDialogButton.addEventListener("click", () => closeDialogAnimated(dom.guestAuthDialog));
+        dom.authOtpForm.addEventListener("submit", submitAuthOtp);
+        dom.authOtpResendButton.addEventListener("click", () => {
+            resendAuthOtp();
+        });
+        dom.closeAuthOtpDialogButton.addEventListener("click", () => closeDialogAnimated(dom.authOtpDialog, resetAuthOtpFlow));
         dom.openProfileButton.addEventListener("click", () => {
             closeAccountMenu();
             openProfileDialog();

@@ -318,6 +318,31 @@ button {
     box-shadow: 0 0 0 3px rgba(32, 243, 155, 0.14);
 }
 
+.auth-inline-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    order: 3;
+}
+
+.auth-link-button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--telegram-strong);
+    font-size: 0.86rem;
+}
+
+.auth-link-button:hover {
+    opacity: 0.82;
+    text-decoration: underline;
+}
+
+#loginSubmitButton {
+    order: 4;
+}
+
 .auth-tab,
 .primary-button,
 .secondary-button,
@@ -1019,6 +1044,11 @@ button {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+.modal-card__actions--spread {
+    justify-content: space-between;
+    align-items: center;
 }
 
 .chat-panel {

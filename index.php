@@ -46,6 +46,10 @@ $basePath = app_base_path();
                         <input id="loginPasswordInput" name="password" type="password" autocomplete="current-password" placeholder="حداقل 8 کاراکتر">
                     </label>
                     <button id="loginSubmitButton" type="submit" class="primary-button">ورود</button>
+                    <div class="auth-inline-actions">
+                        <button id="loginOtpButton" type="button" class="auth-link-button">ورود با کد یکبارمصرف</button>
+                        <button id="forgotPasswordButton" type="button" class="auth-link-button">فراموشی رمز</button>
+                    </div>
                 </form>
 
                 <form id="registerForm" class="auth-form" hidden>
@@ -408,6 +412,37 @@ $basePath = app_base_path();
             <div id="guestAuthStatus" class="inline-status" hidden></div>
             <div class="modal-card__actions">
                 <button type="submit" id="submitGuestAuthButton" class="primary-button">ادامه</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="authOtpDialog" class="modal">
+        <form method="dialog" class="modal-card" id="authOtpForm">
+            <div class="modal-card__head">
+                <h3 id="authOtpTitle">ورود با کد</h3>
+                <button type="button" id="closeAuthOtpDialogButton" class="icon-button close-button" aria-label="بستن"></button>
+            </div>
+            <p id="authOtpDescription" class="modal-card__copy"></p>
+            <label class="field" id="authOtpMobileField">
+                <span>شماره موبایل</span>
+                <input id="authOtpMobileInput" name="mobile" type="tel" inputmode="numeric" autocomplete="username" placeholder="مثلاً 09123456789">
+            </label>
+            <label class="field" id="authOtpCodeField" hidden>
+                <span>کد تایید</span>
+                <input id="authOtpCodeInput" name="code" type="text" inputmode="numeric" maxlength="5" autocomplete="one-time-code" placeholder="کد ۵ رقمی">
+            </label>
+            <label class="field" id="authOtpDisplayNameField" hidden>
+                <span>نام</span>
+                <input id="authOtpDisplayNameInput" name="displayName" type="text" maxlength="40" autocomplete="name" placeholder="نام شما">
+            </label>
+            <label class="field" id="authOtpPasswordField" hidden>
+                <span>رمز جدید</span>
+                <input id="authOtpPasswordInput" name="newPassword" type="password" autocomplete="new-password" placeholder="حداقل 8 کاراکتر">
+            </label>
+            <div id="authOtpStatus" class="inline-status" hidden></div>
+            <div class="modal-card__actions modal-card__actions--spread">
+                <button type="button" id="authOtpResendButton" class="secondary-button" hidden>ارسال مجدد</button>
+                <button type="submit" id="submitAuthOtpButton" class="primary-button">ادامه</button>
             </div>
         </form>
     </dialog>

@@ -109,12 +109,32 @@ Local defaults are defined in [config/app.php](/c:/xampp/htdocs/ootaa2/config/ap
 - `DB_USERNAME=root`
 - `DB_PASSWORD=` empty
 
+## OTP and SMS
+
+- Local development defaults to fake SMS mode unless `SMSIR_FAKE=false` is provided.
+- Real sms.ir settings are read from:
+  - `SMSIR_API_KEY`
+  - `SMSIR_VERIFY_URL`
+  - `SMSIR_TEMPLATE_ID`
+- OTP defaults are configurable with:
+  - `OTP_LENGTH`
+  - `OTP_TTL_SECONDS`
+  - `OTP_MAX_ATTEMPTS`
+  - `OTP_RESEND_COOLDOWN_SECONDS`
+
 ## API Overview
 
 ### Auth
 
 - `POST /api/auth/register`
+- `POST /api/auth/register/request-otp`
+- `POST /api/auth/register/confirm`
 - `POST /api/auth/login`
+- `POST /api/auth/login/request-otp`
+- `POST /api/auth/login/verify-otp`
+- `POST /api/auth/login/complete-profile`
+- `POST /api/auth/password/request-otp`
+- `POST /api/auth/password/reset`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
 - `PATCH /api/account/profile`

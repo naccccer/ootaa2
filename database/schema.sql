@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS messages;
 DROP TABLE IF EXISTS participants;
 DROP TABLE IF EXISTS rooms;
 DROP TABLE IF EXISTS auth_sessions;
+DROP TABLE IF EXISTS otp_verifications;
 DROP TABLE IF EXISTS users;
 
 SET FOREIGN_KEY_CHECKS = 1;
@@ -33,6 +34,26 @@ CREATE TABLE auth_sessions (
     CONSTRAINT auth_sessions_user_fk
         FOREIGN KEY (user_id) REFERENCES users (id)
         ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE otp_verifications (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    mobile_normalized VARCHAR(16) NOT NULL,
+    purpose ENUM('login', 'register', 'password_reset') NOT NULL,
+    code_hash CHAR(64) NOT NULL,
+    attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+    max_attempts INT UNSIGNED NOT NULL,
+    expires_at DATETIME(6) NOT NULL,
+    resend_available_at DATETIME(6) NOT NULL,
+    verified_at DATETIME(6) NULL,
+    consumed_at DATETIME(6) NULL,
+    profile_completed_at DATETIME(6) NULL,
+    meta_json LONGTEXT NULL,
+    created_at DATETIME(6) NOT NULL,
+    updated_at DATETIME(6) NOT NULL,
+    KEY otp_mobile_purpose_index (mobile_normalized, purpose, created_at),
+    KEY otp_expires_at_index (expires_at),
+    KEY otp_consumed_index (consumed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE rooms (

@@ -33,6 +33,18 @@ return [
         'cookie_name' => getenv('APP_AUTH_COOKIE') ?: 'ootaa_auth',
         'session_ttl_seconds' => 60 * 60 * 24 * 30,
     ],
+    'otp' => [
+        'length' => (int) (getenv('OTP_LENGTH') ?: 5),
+        'ttl_seconds' => (int) (getenv('OTP_TTL_SECONDS') ?: 120),
+        'max_attempts' => (int) (getenv('OTP_MAX_ATTEMPTS') ?: 3),
+        'resend_cooldown_seconds' => (int) (getenv('OTP_RESEND_COOLDOWN_SECONDS') ?: 60),
+    ],
+    'sms' => [
+        'api_key' => getenv('SMSIR_API_KEY') ?: '',
+        'verify_url' => getenv('SMSIR_VERIFY_URL') ?: 'https://api.sms.ir/v1/send/verify',
+        'template_id' => (int) (getenv('SMSIR_TEMPLATE_ID') ?: 123456),
+        'fake' => filter_var(getenv('SMSIR_FAKE') ?: ($isLocalEnvironment ? 'true' : 'false'), FILTER_VALIDATE_BOOL),
+    ],
     'db' => [
         'host' => getenv('DB_HOST') ?: ($isLocalEnvironment ? '127.0.0.1' : 'localhost'),
         'port' => (int) (getenv('DB_PORT') ?: 3306),

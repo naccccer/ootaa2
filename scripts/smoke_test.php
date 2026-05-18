@@ -11,11 +11,21 @@ $baseUrl = rtrim($argv[1] ?? 'http://localhost/ootaa2', '/');
 $cookieOne = tempnam(sys_get_temp_dir(), 'ootaa2-user-1-');
 $cookieOneSecondDevice = tempnam(sys_get_temp_dir(), 'ootaa2-user-1b-');
 $cookieTwo = tempnam(sys_get_temp_dir(), 'ootaa2-user-2-');
+$cookieOtpExisting = tempnam(sys_get_temp_dir(), 'ootaa2-otp-existing-');
+$cookieOtpNew = tempnam(sys_get_temp_dir(), 'ootaa2-otp-new-');
 $cookieGuest = tempnam(sys_get_temp_dir(), 'ootaa2-guest-');
 $cookieGuestExisting = tempnam(sys_get_temp_dir(), 'ootaa2-guest-existing-');
 $tempDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ootaa2-smoke-' . bin2hex(random_bytes(4));
 
-if ($cookieOne === false || $cookieOneSecondDevice === false || $cookieTwo === false || $cookieGuest === false || $cookieGuestExisting === false) {
+if (
+    $cookieOne === false
+    || $cookieOneSecondDevice === false
+    || $cookieTwo === false
+    || $cookieOtpExisting === false
+    || $cookieOtpNew === false
+    || $cookieGuest === false
+    || $cookieGuestExisting === false
+) {
     fwrite(STDERR, "Could not create temporary cookie files.\n");
     exit(1);
 }
@@ -107,6 +117,32 @@ function assert_true(bool $condition, string $message): void
     }
 }
 
+function latestOtpDebugCode(string $mobileInput, string $purpose): string
+{
+    $mobileNormalized = \App\Support\MobileNumber::normalize($mobileInput);
+    $statement = Database::connection()->prepare(
+        'SELECT meta_json
+         FROM otp_verifications
+         WHERE mobile_normalized = :mobile_normalized
+           AND purpose = :purpose
+         ORDER BY id DESC
+         LIMIT 1'
+    );
+    $statement->execute([
+        'mobile_normalized' => $mobileNormalized,
+        'purpose' => $purpose,
+    ]);
+    $metaJson = $statement->fetchColumn();
+    $meta = is_string($metaJson) ? json_decode($metaJson, true) : null;
+    $code = is_array($meta) ? ($meta['_debugCode'] ?? null) : null;
+
+    if (!is_string($code) || $code === '') {
+        throw new RuntimeException("Missing debug OTP code for {$purpose}.");
+    }
+
+    return $code;
+}
+
 function writePng(string $path): void
 {
     $base64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9pNaGNsAAAAASUVORK5CYII=';
@@ -177,6 +213,80 @@ try {
         ],
     ]);
     assert_true(($userTwo['user']['mobileDisplay'] ?? '') === '09121234567', 'Second user should expose the display mobile format.');
+
+    requestJson('POST', $baseUrl . '/api/auth/register/request-otp', null, [
+        'json' => [
+            'mobile' => '09120000001',
+            'displayName' => 'Sara OTP',
+            'password' => 'otpregister123',
+        ],
+    ]);
+    $registerOtpCode = latestOtpDebugCode('09120000001', 'register');
+    $otpRegisteredUser = requestJson('POST', $baseUrl . '/api/auth/register/confirm', null, [
+        'json' => [
+            'mobile' => '09120000001',
+            'code' => $registerOtpCode,
+        ],
+    ]);
+    assert_true(($otpRegisteredUser['user']['mobileDisplay'] ?? '') === '09120000001', 'OTP registration should create a registered user.');
+
+    requestJson('POST', $baseUrl . '/api/auth/login/request-otp', $cookieOtpExisting, [
+        'json' => [
+            'mobile' => '09123456789',
+        ],
+    ]);
+    $existingLoginOtpCode = latestOtpDebugCode('09123456789', 'login');
+    $existingOtpLogin = requestJson('POST', $baseUrl . '/api/auth/login/verify-otp', $cookieOtpExisting, [
+        'json' => [
+            'mobile' => '09123456789',
+            'code' => $existingLoginOtpCode,
+        ],
+    ]);
+    assert_true(($existingOtpLogin['needsProfile'] ?? true) === false, 'Existing OTP login should not require a profile step.');
+    assert_true(($existingOtpLogin['user']['id'] ?? 0) === ($userOne['user']['id'] ?? -1), 'Existing OTP login should authenticate the same account.');
+
+    requestJson('POST', $baseUrl . '/api/auth/login/request-otp', $cookieOtpNew, [
+        'json' => [
+            'mobile' => '09120000002',
+        ],
+    ]);
+    $newLoginOtpCode = latestOtpDebugCode('09120000002', 'login');
+    $newOtpVerify = requestJson('POST', $baseUrl . '/api/auth/login/verify-otp', $cookieOtpNew, [
+        'json' => [
+            'mobile' => '09120000002',
+            'code' => $newLoginOtpCode,
+        ],
+    ]);
+    assert_true(($newOtpVerify['needsProfile'] ?? false) === true, 'New OTP login should request profile completion.');
+    $newOtpAccount = requestJson('POST', $baseUrl . '/api/auth/login/complete-profile', $cookieOtpNew, [
+        'json' => [
+            'mobile' => '09120000002',
+            'displayName' => 'New OTP User',
+        ],
+    ]);
+    assert_true(($newOtpAccount['user']['displayName'] ?? '') === 'New OTP User', 'Completing OTP profile should create the account.');
+
+    requestJson('POST', $baseUrl . '/api/auth/password/request-otp', null, [
+        'json' => [
+            'mobile' => '09121234567',
+        ],
+    ]);
+    $passwordResetCode = latestOtpDebugCode('09121234567', 'password_reset');
+    $passwordReset = requestJson('POST', $baseUrl . '/api/auth/password/reset', null, [
+        'json' => [
+            'mobile' => '09121234567',
+            'code' => $passwordResetCode,
+            'newPassword' => 'secret654',
+        ],
+    ]);
+    assert_true(($passwordReset['passwordReset'] ?? false) === true, 'Password reset by OTP should succeed.');
+    $postResetLogin = requestJson('POST', $baseUrl . '/api/auth/login', $cookieTwo, [
+        'json' => [
+            'mobile' => '09121234567',
+            'password' => 'secret654',
+        ],
+    ]);
+    assert_true(($postResetLogin['user']['id'] ?? 0) === ($userTwo['user']['id'] ?? -1), 'User should log in with the OTP-reset password.');
 
     $enterOne = requestJson('POST', $baseUrl . '/api/room/enter', $cookieOne, [
         'json' => [
@@ -298,7 +408,7 @@ try {
     $guestLoginTransfer = requestJson('POST', $baseUrl . '/api/auth/login', $cookieGuestExisting, [
         'json' => [
             'mobile' => '09121234567',
-            'password' => 'secret456',
+            'password' => 'secret654',
         ],
     ]);
     assert_true(($guestLoginTransfer['user']['id'] ?? 0) === ($userTwo['user']['id'] ?? -1), 'Guest login should transfer data to the existing account.');
@@ -443,6 +553,8 @@ try {
     @unlink($cookieOne);
     @unlink($cookieOneSecondDevice);
     @unlink($cookieTwo);
+    @unlink($cookieOtpExisting);
+    @unlink($cookieOtpNew);
     @unlink($cookieGuest);
     @unlink($cookieGuestExisting);
 

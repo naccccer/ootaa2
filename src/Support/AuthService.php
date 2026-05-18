@@ -69,6 +69,70 @@ class AuthService
         ];
     }
 
+    public function requestRegisterOtp(string $mobileInput, string $displayName, string $password): array
+    {
+        $mobileNormalized = MobileNumber::normalize($mobileInput);
+        $displayName = $this->sanitizeDisplayName($displayName);
+        $passwordHash = password_hash($this->sanitizePassword($password), PASSWORD_DEFAULT);
+
+        if ($this->findUserByMobile($mobileNormalized) !== null) {
+            throw new ApiException('این شماره موبایل قبلاً ثبت شده است.', 409);
+        }
+
+        return OtpService::make()->requestOtp($mobileNormalized, 'register', [
+            'displayName' => $displayName,
+            'passwordHash' => $passwordHash,
+        ]);
+    }
+
+    public function confirmRegisterOtp(string $mobileInput, string $code): array
+    {
+        $mobileNormalized = MobileNumber::normalize($mobileInput);
+
+        if ($this->findUserByMobile($mobileNormalized) !== null) {
+            throw new ApiException('این شماره موبایل قبلاً ثبت شده است.', 409);
+        }
+
+        $otp = OtpService::make();
+        $record = $otp->verifyOtp($mobileNormalized, 'register', $code);
+        $meta = $otp->decodeMeta($record);
+        $displayName = trim((string) ($meta['displayName'] ?? ''));
+        $passwordHash = (string) ($meta['passwordHash'] ?? '');
+
+        if ($displayName === '' || $passwordHash === '') {
+            throw new ApiException('اطلاعات ثبت‌نام این کد کامل نیست.', 422);
+        }
+
+        $now = $this->now();
+
+        try {
+            $statement = $this->pdo->prepare(
+                'INSERT INTO users (kind, mobile_normalized, display_name, password_hash, created_at, updated_at)
+                 VALUES (:kind, :mobile_normalized, :display_name, :password_hash, :created_at, :updated_at)'
+            );
+            $statement->execute([
+                'kind' => 'registered',
+                'mobile_normalized' => $mobileNormalized,
+                'display_name' => $displayName,
+                'password_hash' => $passwordHash,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        } catch (Throwable $throwable) {
+            throw new ApiException('این شماره موبایل قبلاً ثبت شده است.', 409, [
+                'debug' => app_config('app.debug') ? $throwable->getMessage() : null,
+            ]);
+        }
+
+        $user = $this->requireUserById((int) $this->pdo->lastInsertId());
+        $otp->consumeRecord((int) $record['id']);
+        $this->replaceSessionsForUser((int) $user['id']);
+
+        return [
+            'user' => $this->serializeUser($user),
+        ];
+    }
+
     public function login(string $mobileInput, string $password): array
     {
         $mobileNormalized = MobileNumber::normalize($mobileInput);
@@ -103,6 +167,131 @@ class AuthService
 
         return [
             'user' => $this->serializeUser($user),
+        ];
+    }
+
+    public function requestLoginOtp(string $mobileInput): array
+    {
+        $mobileNormalized = MobileNumber::normalize($mobileInput);
+
+        return OtpService::make()->requestOtp($mobileNormalized, 'login');
+    }
+
+    public function verifyLoginOtp(string $mobileInput, string $code): array
+    {
+        $mobileNormalized = MobileNumber::normalize($mobileInput);
+        $otp = OtpService::make();
+        $record = $otp->verifyOtp($mobileNormalized, 'login', $code);
+        $user = $this->findUserByMobile($mobileNormalized);
+
+        if ($user !== null) {
+            if (!$this->isRegistered($user)) {
+                throw new ApiException('این شماره برای حساب مهمان قابل استفاده نیست.', 403);
+            }
+
+            $otp->consumeRecord((int) $record['id']);
+            $this->createSession((int) $user['id']);
+
+            return [
+                'needsProfile' => false,
+                'user' => $this->serializeUser($user),
+            ];
+        }
+
+        return [
+            'needsProfile' => true,
+            'mobileDisplay' => MobileNumber::toDisplay($mobileNormalized),
+        ];
+    }
+
+    public function completeLoginOtpProfile(string $mobileInput, string $displayName): array
+    {
+        $mobileNormalized = MobileNumber::normalize($mobileInput);
+        $displayName = $this->sanitizeDisplayName($displayName);
+
+        if ($this->findUserByMobile($mobileNormalized) !== null) {
+            throw new ApiException('این شماره موبایل قبلاً ثبت شده است.', 409);
+        }
+
+        $otp = OtpService::make();
+        $record = $otp->requireVerifiedRecord($mobileNormalized, 'login');
+        $meta = $otp->decodeMeta($record);
+
+        if (($meta['profileCreated'] ?? false) === true) {
+            throw new ApiException('این حساب قبلاً تکمیل شده است.', 409);
+        }
+
+        $now = $this->now();
+        $statement = $this->pdo->prepare(
+            'INSERT INTO users (kind, mobile_normalized, display_name, password_hash, created_at, updated_at)
+             VALUES (:kind, :mobile_normalized, :display_name, NULL, :created_at, :updated_at)'
+        );
+        $statement->execute([
+            'kind' => 'registered',
+            'mobile_normalized' => $mobileNormalized,
+            'display_name' => $displayName,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $user = $this->requireUserById((int) $this->pdo->lastInsertId());
+        $otp->markProfileCompleted((int) $record['id'], [
+            'profileCreated' => true,
+            'displayName' => $displayName,
+        ]);
+        $this->replaceSessionsForUser((int) $user['id']);
+
+        return [
+            'user' => $this->serializeUser($user),
+        ];
+    }
+
+    public function requestPasswordResetOtp(string $mobileInput): array
+    {
+        $mobileNormalized = MobileNumber::normalize($mobileInput);
+        $user = $this->findRegisteredUserByMobile($mobileNormalized);
+
+        if ($user === null) {
+            throw new ApiException('حسابی با این شماره موبایل پیدا نشد.', 404);
+        }
+
+        if (!is_string($user['password_hash']) || trim((string) $user['password_hash']) === '') {
+            throw new ApiException('برای این حساب هنوز رمزی تعریف نشده است.', 422);
+        }
+
+        return OtpService::make()->requestOtp($mobileNormalized, 'password_reset');
+    }
+
+    public function resetPasswordWithOtp(string $mobileInput, string $code, string $newPassword): array
+    {
+        $mobileNormalized = MobileNumber::normalize($mobileInput);
+        $user = $this->findRegisteredUserByMobile($mobileNormalized);
+
+        if ($user === null) {
+            throw new ApiException('حسابی با این شماره موبایل پیدا نشد.', 404);
+        }
+
+        $passwordHash = password_hash($this->sanitizePassword($newPassword), PASSWORD_DEFAULT);
+        $otp = OtpService::make();
+        $record = $otp->verifyOtp($mobileNormalized, 'password_reset', $code);
+        $statement = $this->pdo->prepare(
+            'UPDATE users
+             SET password_hash = :password_hash,
+                 updated_at = :updated_at
+             WHERE id = :id'
+        );
+        $statement->execute([
+            'password_hash' => $passwordHash,
+            'updated_at' => $this->now(),
+            'id' => (int) $user['id'],
+        ]);
+
+        $otp->consumeRecord((int) $record['id']);
+        $this->replaceSessionsForUser((int) $user['id']);
+
+        return [
+            'passwordReset' => true,
+            'user' => $this->serializeUser($this->requireUserById((int) $user['id'])),
         ];
     }
 
@@ -568,6 +757,33 @@ class AuthService
 
         if ($user === false) {
             throw new ApiException('کاربر پیدا نشد.', 404);
+        }
+
+        return $user;
+    }
+
+    private function findUserByMobile(string $mobileNormalized): ?array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT *
+             FROM users
+             WHERE mobile_normalized = :mobile_normalized
+             LIMIT 1'
+        );
+        $statement->execute([
+            'mobile_normalized' => $mobileNormalized,
+        ]);
+        $user = $statement->fetch();
+
+        return $user === false ? null : $user;
+    }
+
+    private function findRegisteredUserByMobile(string $mobileNormalized): ?array
+    {
+        $user = $this->findUserByMobile($mobileNormalized);
+
+        if ($user === null || !$this->isRegistered($user)) {
+            return null;
         }
 
         return $user;

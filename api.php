@@ -42,6 +42,55 @@ try {
         ));
     }
 
+    if ($route === 'auth/login/request-otp' && $method === 'POST') {
+        JsonResponse::success($auth->requestLoginOtp(
+            (string) Request::input('mobile', '')
+        ));
+    }
+
+    if ($route === 'auth/login/verify-otp' && $method === 'POST') {
+        JsonResponse::success($auth->verifyLoginOtp(
+            (string) Request::input('mobile', ''),
+            (string) Request::input('code', '')
+        ));
+    }
+
+    if ($route === 'auth/login/complete-profile' && $method === 'POST') {
+        JsonResponse::success($auth->completeLoginOtpProfile(
+            (string) Request::input('mobile', ''),
+            (string) Request::input('displayName', '')
+        ), 201);
+    }
+
+    if ($route === 'auth/register/request-otp' && $method === 'POST') {
+        JsonResponse::success($auth->requestRegisterOtp(
+            (string) Request::input('mobile', ''),
+            (string) Request::input('displayName', ''),
+            (string) Request::input('password', '')
+        ));
+    }
+
+    if ($route === 'auth/register/confirm' && $method === 'POST') {
+        JsonResponse::success($auth->confirmRegisterOtp(
+            (string) Request::input('mobile', ''),
+            (string) Request::input('code', '')
+        ), 201);
+    }
+
+    if ($route === 'auth/password/request-otp' && $method === 'POST') {
+        JsonResponse::success($auth->requestPasswordResetOtp(
+            (string) Request::input('mobile', '')
+        ));
+    }
+
+    if ($route === 'auth/password/reset' && $method === 'POST') {
+        JsonResponse::success($auth->resetPasswordWithOtp(
+            (string) Request::input('mobile', ''),
+            (string) Request::input('code', ''),
+            (string) Request::input('newPassword', '')
+        ));
+    }
+
     if ($route === 'auth/logout' && $method === 'POST') {
         JsonResponse::success($auth->logout());
     }
