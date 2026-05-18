@@ -11,6 +11,7 @@
         messages: new Map(),
         syncCursor: null,
         pollTimer: null,
+        renderedMessageIds: new Set(),
         editingMessageId: null,
         replyingMessageId: null,
         contextMessageId: null,
@@ -115,6 +116,18 @@
         fileInput: document.getElementById("fileInput"),
         messageInput: document.getElementById("messageInput"),
         sendButton: document.getElementById("sendButton"),
+        imagePreviewDialog: document.getElementById("imagePreviewDialog"),
+        imagePreviewForm: document.getElementById("imagePreviewForm"),
+        imagePreviewTitle: document.getElementById("imagePreviewTitle"),
+        imagePreviewStage: document.getElementById("imagePreviewStage"),
+        imageCaptionInput: document.getElementById("imageCaptionInput"),
+        imagePreviewThumbs: document.getElementById("imagePreviewThumbs"),
+        closeImagePreviewButton: document.getElementById("closeImagePreviewButton"),
+        cancelImagePreviewButton: document.getElementById("cancelImagePreviewButton"),
+        sendImagePreviewButton: document.getElementById("sendImagePreviewButton"),
+        photoViewerDialog: document.getElementById("photoViewerDialog"),
+        photoViewerImage: document.getElementById("photoViewerImage"),
+        closePhotoViewerButton: document.getElementById("closePhotoViewerButton"),
         roomDialog: document.getElementById("roomDialog"),
         roomDialogTitle: document.getElementById("roomDialogTitle"),
         roomDialogDescription: document.getElementById("roomDialogDescription"),
@@ -282,6 +295,80 @@
         target.classList.toggle("is-error", Boolean(isError));
     }
 
+    function animateHide(element, className, callback) {
+        if (!element || element.hidden) {
+            if (callback) {
+                callback();
+            }
+            return;
+        }
+
+        element.classList.add(className);
+        const token = `${Date.now()}-${Math.random()}`;
+        element.dataset.motionToken = token;
+        let settled = false;
+        const finish = () => {
+            if (element.dataset.motionToken !== token) {
+                return;
+            }
+            if (settled) {
+                return;
+            }
+            settled = true;
+            element.removeEventListener("animationend", handleAnimationEnd);
+            delete element.dataset.motionToken;
+            element.classList.remove(className);
+            element.hidden = true;
+            if (callback) {
+                callback();
+            }
+        };
+
+        const handleAnimationEnd = (event) => {
+            if (event.target === element) {
+                finish();
+            }
+        };
+
+        element.addEventListener("animationend", handleAnimationEnd);
+        window.setTimeout(finish, 360);
+    }
+
+    function closeDialogAnimated(dialog, afterClose = null) {
+        if (!dialog.open) {
+            if (afterClose) {
+                afterClose();
+            }
+            return;
+        }
+
+        dialog.classList.add("is-closing");
+        let settled = false;
+        const finish = () => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            dialog.removeEventListener("animationend", handleAnimationEnd);
+            dialog.classList.remove("is-closing");
+            if (dialog.open) {
+                dialog.close();
+            }
+            if (afterClose) {
+                afterClose();
+            }
+        };
+
+        const handleAnimationEnd = (event) => {
+            if (event.target.closest(".modal-card, .menu-card, .image-preview-card, .photo-viewer")) {
+                finish();
+            }
+        };
+
+        dialog.addEventListener("animationend", handleAnimationEnd);
+        window.setTimeout(finish, 260);
+    }
+
     async function fetchJson(url, options = {}) {
         const isFormData = options.body instanceof FormData;
         const response = await fetch(url, {
@@ -420,11 +507,7 @@
                 dom.confirmDialog.removeEventListener("cancel", handleCancel);
                 dom.confirmDialog.removeEventListener("close", handleClose);
 
-                if (dom.confirmDialog.open) {
-                    dom.confirmDialog.close();
-                }
-
-                resolve(value);
+                closeDialogAnimated(dom.confirmDialog, () => resolve(value));
             };
 
             const handleSubmit = (event) => {
@@ -524,6 +607,17 @@
         renderSelectedFiles();
     }
 
+    function replaceSelectedFiles(files) {
+        state.selectedFiles.forEach((entry) => {
+            if (entry.previewUrl) {
+                URL.revokeObjectURL(entry.previewUrl);
+            }
+        });
+
+        state.selectedFiles = Array.from(files || []).map(toSelectedFileEntry);
+        renderSelectedFiles();
+    }
+
     function toSelectedFileEntry(file) {
         const previewKind = file.type.startsWith("image/")
             ? "image"
@@ -542,22 +636,112 @@
     }
 
     function renderSelectedFiles() {
+        dom.selectedFilesList.hidden = true;
+        dom.selectedFilesList.innerHTML = "";
+    }
+
+    function isPreviewableMedia(entry) {
+        return entry.previewKind === "image" || entry.previewKind === "video";
+    }
+
+    function renderPreviewMedia(entry) {
+        if (entry.previewKind === "video") {
+            return `<video controls preload="metadata" src="${escapeHtml(entry.previewUrl || "")}" aria-label="${escapeHtml(entry.file.name)}"></video>`;
+        }
+
+        return `<img src="${escapeHtml(entry.previewUrl || "")}" alt="${escapeHtml(entry.file.name)}">`;
+    }
+
+    function renderPreviewThumb(entry) {
+        if (entry.previewKind === "video") {
+            return `<video muted preload="metadata" src="${escapeHtml(entry.previewUrl || "")}" aria-hidden="true"></video>`;
+        }
+
+        return `<img src="${escapeHtml(entry.previewUrl || "")}" alt="">`;
+    }
+
+    function renderPreviewFileEntry(entry) {
+        return `
+            <div class="preview-file">
+                <span class="preview-file__icon" aria-hidden="true"></span>
+                <span class="preview-file__meta">
+                    <strong>${escapeHtml(entry.file.name)}</strong>
+                    <small>${escapeHtml(formatSize(entry.file.size))}</small>
+                </span>
+            </div>
+        `;
+    }
+
+    function renderImagePreviewDialog() {
         if (state.selectedFiles.length === 0) {
-            dom.selectedFilesList.hidden = true;
-            dom.selectedFilesList.innerHTML = "";
+            dom.imagePreviewStage.innerHTML = "";
+            dom.imagePreviewThumbs.innerHTML = "";
+            dom.imagePreviewThumbs.hidden = true;
             return;
         }
 
-        dom.selectedFilesList.hidden = false;
-        dom.selectedFilesList.innerHTML = state.selectedFiles.map((entry) => `
-            <div class="selected-file" data-file-id="${escapeHtml(entry.id)}">
-                <div>
-                    <strong>${escapeHtml(entry.file.name)}</strong>
-                    <div class="selected-file__meta">${escapeHtml(formatSize(entry.file.size))}</div>
+        const [activeEntry] = state.selectedFiles;
+        const allPreviewable = state.selectedFiles.every((entry) => isPreviewableMedia(entry));
+        dom.imagePreviewTitle.textContent = allPreviewable ? "ارسال رسانه" : "ارسال فایل";
+        dom.imagePreviewStage.classList.toggle("image-preview-stage--files", !allPreviewable);
+        dom.imagePreviewStage.innerHTML = allPreviewable
+            ? `
+                <div class="image-preview-frame">
+                    ${renderPreviewMedia(activeEntry)}
                 </div>
-                <button type="button" class="icon-button close-button" data-action="remove-file" data-file-id="${escapeHtml(entry.id)}" aria-label="حذف فایل"></button>
-            </div>
+            `
+            : `
+                <div class="preview-files">
+                    ${state.selectedFiles.map(renderPreviewFileEntry).join("")}
+                </div>
+            `;
+
+        dom.imagePreviewThumbs.hidden = !allPreviewable || state.selectedFiles.length < 2;
+        dom.imagePreviewThumbs.innerHTML = state.selectedFiles.map((entry, index) => `
+            <button type="button" class="image-preview-thumb${index === 0 ? " is-active" : ""}" data-action="select-preview-file" data-file-id="${escapeHtml(entry.id)}" aria-label="${escapeHtml(entry.file.name)}">
+                ${renderPreviewThumb(entry)}
+            </button>
         `).join("");
+    }
+
+    function openImagePreviewDialog() {
+        if (state.selectedFiles.length === 0) {
+            return;
+        }
+
+        dom.imageCaptionInput.value = dom.messageInput.value.trim();
+        renderImagePreviewDialog();
+        dom.imagePreviewDialog.showModal();
+        dom.imageCaptionInput.focus();
+    }
+
+    function closeImagePreviewDialog(clearFiles = false) {
+        if (clearFiles) {
+            clearSelectedFiles();
+        }
+
+        if (dom.imagePreviewDialog.open) {
+            closeDialogAnimated(dom.imagePreviewDialog);
+        }
+    }
+
+    function removePreviewFile(fileId) {
+        const target = state.selectedFiles.find((entry) => entry.id === fileId);
+
+        if (target?.previewUrl) {
+            URL.revokeObjectURL(target.previewUrl);
+        }
+
+        state.selectedFiles = state.selectedFiles.filter((entry) => entry.id !== fileId);
+
+        if (state.selectedFiles.length === 0) {
+            closeImagePreviewDialog(true);
+            renderComposerState();
+            return;
+        }
+
+        renderImagePreviewDialog();
+        renderComposerState();
     }
 
     function renderAuthMode() {
@@ -702,8 +886,8 @@
             return;
         }
 
-        dom.contactSearchResults.innerHTML = contacts.map((contact) => `
-            <button type="button" class="contact-search-result" data-contact-id="${escapeHtml(contact.id)}">
+        dom.contactSearchResults.innerHTML = contacts.map((contact, index) => `
+            <button type="button" class="contact-search-result" data-contact-id="${escapeHtml(contact.id)}" style="--stagger-index: ${index}">
                 <span class="contact-search-result__avatar" aria-hidden="true"></span>
                 <span>
                     <strong>${escapeHtml(contact.displayName)}</strong>
@@ -735,19 +919,22 @@
     }
 
     function closeContactSearch() {
-        dom.contactSearchPanel.hidden = true;
         dom.toggleContactSearchButton.classList.remove("is-active");
         dom.quickRoomForm.classList.remove("is-searching");
-        dom.contactSearchInput.value = "";
-        renderContactSearchResults([]);
         window.clearTimeout(state.contactSearchTimer);
-        renderQuickRoomState();
+        animateHide(dom.contactSearchPanel, "is-closing", () => {
+            dom.contactSearchInput.value = "";
+            renderContactSearchResults([]);
+            renderQuickRoomState();
+        });
     }
 
     function toggleContactSearch() {
         const opening = dom.contactSearchPanel.hidden;
 
         if (opening) {
+            delete dom.contactSearchPanel.dataset.motionToken;
+            dom.contactSearchPanel.classList.remove("is-closing");
             dom.contactSearchPanel.hidden = false;
             dom.toggleContactSearchButton.classList.add("is-active");
             dom.quickRoomForm.classList.add("is-searching");
@@ -796,25 +983,29 @@
                 lastDateKey = dateKey;
             }
 
-            const attachments = renderAttachments(message.attachments || []);
+            const messageAttachments = message.attachments || [];
+            const isPhotoMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "image");
+            const isFileMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "download");
+            const attachments = renderAttachments(messageAttachments);
+            const isEntering = !state.renderedMessageIds.has(message.id);
             const replyMarkup = message.replyTo && !message.replyTo.isDeleted ? `
                 <div class="message__reply">
                     <div class="message__reply-meta">${escapeHtml(message.replyTo.senderName)} • ${escapeHtml(message.replyTo.senderMobile || "")}</div>
                     <div>${escapeHtml(message.replyTo.bodyText || "فایل")}</div>
                 </div>
             ` : "";
-            const bodyText = `<div class="message__body">${escapeHtml(message.bodyText || "")}</div>`;
+            const bodyText = message.bodyText ? `<div class="message__body">${escapeHtml(message.bodyText)}</div>` : "";
+            const messageContent = isFileMessage ? `${attachments}${bodyText}` : `${bodyText}${attachments}`;
             return `
                 ${dateSeparator}
-                <article class="message${message.isOwn ? " is-own" : ""}" data-message-id="${message.id}" tabindex="0">
+                <article class="message${message.isOwn ? " is-own" : ""}${isPhotoMessage ? " message--photo" : ""}${isFileMessage ? " message--file" : ""}${isEntering ? " is-entering" : ""}" data-message-id="${message.id}" tabindex="0">
                     <div class="message__head">
                         <div class="message__author">
                             <strong>${escapeHtml(message.senderName)}</strong>
                         </div>
                     </div>
                     ${replyMarkup}
-                    ${bodyText}
-                    ${attachments}
+                    ${messageContent}
                     <div class="message__meta">
                         <span class="message__time">${escapeHtml(formatMessageTime(messageDate))}</span>
                         ${message.isEdited ? '<span class="message__edited-icon" title="ویرایش‌شده" aria-label="ویرایش‌شده"></span>' : ""}
@@ -823,12 +1014,29 @@
             `;
         }).join("");
 
+        messages.forEach((message) => state.renderedMessageIds.add(message.id));
         dom.messagesList.scrollTop = dom.messagesList.scrollHeight;
     }
 
     function renderAttachments(attachments) {
         if (!attachments || attachments.length === 0) {
             return "";
+        }
+
+        if (attachments.every((attachment) => attachment.previewKind === "image")) {
+            return `
+                <div class="message__attachments message__attachments--photo">
+                    ${attachments.map((attachment) => renderAttachmentPreview(attachment)).join("")}
+                </div>
+            `;
+        }
+
+        if (attachments.every((attachment) => attachment.previewKind === "download")) {
+            return `
+                <div class="message__attachments message__attachments--files">
+                    ${attachments.map((attachment) => renderAttachmentPreview(attachment)).join("")}
+                </div>
+            `;
         }
 
         return `
@@ -848,7 +1056,7 @@
 
     function renderAttachmentPreview(attachment) {
         if (attachment.previewKind === "image") {
-            return `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachment.name)}"></a>`;
+            return `<a class="attachment-photo" href="${escapeHtml(attachment.url)}" data-photo-url="${escapeHtml(attachment.url)}" data-photo-name="${escapeHtml(attachment.name)}"><img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachment.name)}"></a>`;
         }
 
         if (attachment.previewKind === "video") {
@@ -859,7 +1067,66 @@
             return `<audio controls preload="metadata" src="${escapeHtml(attachment.url)}"></audio>`;
         }
 
-        return `<a class="secondary-button" href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer">دانلود فایل</a>`;
+        return `
+            <a class="attachment-file" href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer">
+                <span class="attachment-file__icon" aria-hidden="true"></span>
+                <span class="attachment-file__meta">
+                    <strong>${escapeHtml(attachment.name)}</strong>
+                    <small>${escapeHtml(formatSize(attachment.sizeBytes))}</small>
+                </span>
+            </a>
+        `;
+    }
+
+    function openPhotoViewer(url, name = "") {
+        dom.photoViewerImage.src = url;
+        dom.photoViewerImage.alt = name;
+        dom.photoViewerDialog.showModal();
+    }
+
+    function closePhotoViewer() {
+        closeDialogAnimated(dom.photoViewerDialog, () => {
+            dom.photoViewerImage.removeAttribute("src");
+            dom.photoViewerImage.alt = "";
+        });
+    }
+
+    function messageFingerprint(message) {
+        return JSON.stringify({
+            id: message.id,
+            bodyText: message.bodyText || "",
+            updatedAt: message.updatedAt || "",
+            deletedAt: message.deletedAt || "",
+            isDeleted: Boolean(message.isDeleted),
+            isEdited: Boolean(message.isEdited),
+            attachments: (message.attachments || []).map((attachment) => ({
+                id: attachment.id,
+                name: attachment.name,
+                url: attachment.url,
+                sizeBytes: attachment.sizeBytes,
+                previewKind: attachment.previewKind
+            })),
+            replyTo: message.replyTo ? {
+                id: message.replyTo.id,
+                bodyText: message.replyTo.bodyText || "",
+                isDeleted: Boolean(message.replyTo.isDeleted)
+            } : null
+        });
+    }
+
+    function upsertMessages(messages) {
+        let changed = false;
+
+        (messages || []).forEach((message) => {
+            const previous = state.messages.get(message.id);
+
+            if (!previous || messageFingerprint(previous) !== messageFingerprint(message)) {
+                state.messages.set(message.id, message);
+                changed = true;
+            }
+        });
+
+        return changed;
     }
 
     function applyBootstrapData(data) {
@@ -868,10 +1135,9 @@
         state.presence = data.presence || { onlineCount: 0, participants: [] };
         state.syncCursor = data.syncCursor || null;
         state.messages.clear();
+        state.renderedMessageIds.clear();
 
-        (data.messages || []).forEach((message) => {
-            state.messages.set(message.id, message);
-        });
+        upsertMessages(data.messages || []);
 
         if (state.room) {
             rememberRoom(state.room);
@@ -886,10 +1152,7 @@
         state.room = data.room || state.room;
         state.presence = data.presence || state.presence;
         state.syncCursor = data.syncCursor || state.syncCursor;
-
-        (data.messages || []).forEach((message) => {
-            state.messages.set(message.id, message);
-        });
+        const messagesChanged = upsertMessages(data.messages || []);
 
         if (state.room) {
             rememberRoom(state.room);
@@ -898,7 +1161,10 @@
 
         renderRoomMeta();
         renderPresence();
-        renderMessages();
+
+        if (messagesChanged) {
+            renderMessages();
+        }
     }
 
     function handleUnauthorized() {
@@ -1114,7 +1380,7 @@
             });
             state.user = data.user;
             renderShell();
-            dom.profileDialog.close();
+            closeDialogAnimated(dom.profileDialog);
         } catch (error) {
             setStatus(dom.profileStatus, error.message, true);
         }
@@ -1133,7 +1399,7 @@
                 })
             });
             state.user = data.user;
-            dom.passwordDialog.close();
+            closeDialogAnimated(dom.passwordDialog);
             dom.passwordForm.reset();
             renderShell();
         } catch (error) {
@@ -1164,7 +1430,7 @@
             updateRememberedRoomName(state.room);
             renderRoomMeta();
             renderRecentRooms();
-            dom.roomNameDialog.close();
+            closeDialogAnimated(dom.roomNameDialog);
         } catch (error) {
             setStatus(dom.roomNameStatus, error.message, true);
         }
@@ -1200,7 +1466,10 @@
             } else {
                 const formData = new FormData();
                 formData.append("roomCode", state.room.code);
-                formData.append("text", dom.messageInput.value.trim());
+                formData.append(
+                    "text",
+                    dom.imagePreviewDialog.open ? dom.imageCaptionInput.value.trim() : dom.messageInput.value.trim()
+                );
 
                 if (state.replyingMessageId) {
                     formData.append("replyToMessageId", String(state.replyingMessageId));
@@ -1218,6 +1487,10 @@
                 state.room = data.room || state.room;
                 state.presence = data.presence || state.presence;
                 dom.messageInput.value = "";
+                dom.imageCaptionInput.value = "";
+                if (dom.imagePreviewDialog.open) {
+                    closeDialogAnimated(dom.imagePreviewDialog);
+                }
                 clearSelectedFiles();
                 exitReplyMode();
                 renderRoomMeta();
@@ -1360,7 +1633,7 @@
 
     function closeMessageMenu() {
         if (dom.messageMenuDialog.open) {
-            dom.messageMenuDialog.close();
+            closeDialogAnimated(dom.messageMenuDialog);
         }
     }
 
@@ -1398,7 +1671,7 @@
 
     function closeRoomContextMenu() {
         if (dom.roomContextMenuDialog.open) {
-            dom.roomContextMenuDialog.close();
+            closeDialogAnimated(dom.roomContextMenuDialog);
         }
     }
 
@@ -1536,10 +1809,7 @@
     }
 
     function closeRegisterNameDialog() {
-        if (dom.registerNameDialog.open) {
-            dom.registerNameDialog.close();
-        }
-        setStatus(dom.registerNameStatus, "", false);
+        closeDialogAnimated(dom.registerNameDialog, () => setStatus(dom.registerNameStatus, "", false));
     }
 
     function openAccountMenu() {
@@ -1550,7 +1820,7 @@
 
     function closeAccountMenu() {
         if (dom.accountMenuDialog.open) {
-            dom.accountMenuDialog.close();
+            closeDialogAnimated(dom.accountMenuDialog);
         }
     }
 
@@ -1566,15 +1836,12 @@
 
     function closeRoomMenu() {
         if (dom.roomMenuDialog.open) {
-            dom.roomMenuDialog.close();
+            closeDialogAnimated(dom.roomMenuDialog);
         }
     }
 
     function closeRoomDialog() {
-        if (dom.roomDialog.open) {
-            dom.roomDialog.close();
-        }
-        setStatus(dom.roomDialogStatus, "", false);
+        closeDialogAnimated(dom.roomDialog, () => setStatus(dom.roomDialogStatus, "", false));
     }
 
     function openProfileDialog() {
@@ -1714,9 +1981,9 @@
         dom.profileForm.addEventListener("submit", submitProfile);
         dom.passwordForm.addEventListener("submit", submitPassword);
         dom.roomNameForm.addEventListener("submit", submitRoomName);
-        dom.closeProfileDialogButton.addEventListener("click", () => dom.profileDialog.close());
-        dom.closePasswordDialogButton.addEventListener("click", () => dom.passwordDialog.close());
-        dom.closeRoomNameDialogButton.addEventListener("click", () => dom.roomNameDialog.close());
+        dom.closeProfileDialogButton.addEventListener("click", () => closeDialogAnimated(dom.profileDialog));
+        dom.closePasswordDialogButton.addEventListener("click", () => closeDialogAnimated(dom.passwordDialog));
+        dom.closeRoomNameDialogButton.addEventListener("click", () => closeDialogAnimated(dom.roomNameDialog));
         dom.openRoomNameButton.addEventListener("click", () => {
             closeRoomMenu();
             openRoomNameDialog();
@@ -1903,10 +2170,43 @@
         });
 
         dom.fileInput.addEventListener("change", () => {
-            clearSelectedFiles();
-            state.selectedFiles = Array.from(dom.fileInput.files || []).map(toSelectedFileEntry);
-            renderSelectedFiles();
+            replaceSelectedFiles(dom.fileInput.files);
+            if (state.selectedFiles.length > 0) {
+                openImagePreviewDialog();
+            }
             renderComposerState();
+        });
+
+        dom.closeImagePreviewButton.addEventListener("click", () => closeImagePreviewDialog(true));
+        dom.cancelImagePreviewButton.addEventListener("click", () => closeImagePreviewDialog(true));
+        dom.imagePreviewDialog.addEventListener("cancel", (event) => {
+            event.preventDefault();
+            closeImagePreviewDialog(true);
+        });
+        dom.imagePreviewForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+
+            if (!dom.sendButton.disabled) {
+                dom.composerForm.requestSubmit();
+            }
+        });
+        dom.imagePreviewThumbs.addEventListener("click", (event) => {
+            const button = event.target.closest('[data-action="select-preview-file"]');
+
+            if (!button) {
+                return;
+            }
+
+            const fileId = button.dataset.fileId || "";
+            const index = state.selectedFiles.findIndex((entry) => entry.id === fileId);
+
+            if (index <= 0) {
+                return;
+            }
+
+            const [entry] = state.selectedFiles.splice(index, 1);
+            state.selectedFiles.unshift(entry);
+            renderImagePreviewDialog();
         });
 
         dom.selectedFilesList.addEventListener("click", (event) => {
@@ -1945,6 +2245,26 @@
         dom.cancelEditButton.addEventListener("click", () => {
             exitEditMode();
             dom.messageInput.value = "";
+        });
+        dom.closePhotoViewerButton.addEventListener("click", closePhotoViewer);
+        dom.photoViewerDialog.addEventListener("click", (event) => {
+            if (event.target === dom.photoViewerDialog) {
+                closePhotoViewer();
+            }
+        });
+        dom.photoViewerDialog.addEventListener("cancel", (event) => {
+            event.preventDefault();
+            closePhotoViewer();
+        });
+        dom.messagesList.addEventListener("click", (event) => {
+            const photoLink = event.target.closest(".attachment-photo");
+
+            if (!photoLink) {
+                return;
+            }
+
+            event.preventDefault();
+            openPhotoViewer(photoLink.dataset.photoUrl || photoLink.href, photoLink.dataset.photoName || "");
         });
 
         dom.messagesList.addEventListener("contextmenu", (event) => {

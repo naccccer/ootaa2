@@ -166,6 +166,29 @@ $basePath = app_base_path();
         </section>
     </div>
 
+    <dialog id="imagePreviewDialog" class="modal image-preview-dialog">
+        <form method="dialog" class="image-preview-card" id="imagePreviewForm">
+            <div class="image-preview-card__head">
+                <strong id="imagePreviewTitle">ارسال فایل</strong>
+                <button type="button" id="closeImagePreviewButton" class="icon-button close-button" aria-label="بستن"></button>
+            </div>
+            <div id="imagePreviewStage" class="image-preview-stage"></div>
+            <textarea id="imageCaptionInput" rows="1" maxlength="4000" placeholder="کپشن"></textarea>
+            <div id="imagePreviewThumbs" class="image-preview-thumbs" hidden></div>
+            <div class="image-preview-card__actions">
+                <button type="button" id="cancelImagePreviewButton" class="ghost-button">لغو</button>
+                <button type="submit" id="sendImagePreviewButton" class="send-button image-preview-send-button" aria-label="ارسال"></button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="photoViewerDialog" class="modal photo-viewer-dialog">
+        <div class="photo-viewer">
+            <button type="button" id="closePhotoViewerButton" class="icon-button close-button photo-viewer__close" aria-label="بستن"></button>
+            <img id="photoViewerImage" src="" alt="">
+        </div>
+    </dialog>
+
     <dialog id="accountMenuDialog" class="modal">
         <div class="menu-card">
             <div class="menu-card__head">
