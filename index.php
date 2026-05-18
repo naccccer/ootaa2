@@ -142,6 +142,12 @@ $basePath = app_base_path();
                     </div>
 
                     <section id="messagesList" class="messages-list"></section>
+                    <div id="chatDropOverlay" class="chat-drop-overlay" hidden aria-hidden="true">
+                        <div class="chat-drop-overlay__card">
+                            <span class="chat-drop-overlay__icon" aria-hidden="true"></span>
+                            <strong>&#1585;&#1607;&#1575; &#1705;&#1585;&#1583;&#1606; &#1601;&#1575;&#1740;&#1604; &#1576;&#1585;&#1575;&#1740; &#1575;&#1585;&#1587;&#1575;&#1604;</strong>
+                        </div>
+                    </div>
 
                     <form id="composerForm" class="composer" enctype="multipart/form-data">
                         <div id="replyBanner" class="context-banner" hidden>

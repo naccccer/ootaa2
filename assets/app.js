@@ -23,6 +23,7 @@
         selectedMessageIds: new Set(),
         roomDialogMode: "join",
         selectedFiles: [],
+        dragDepth: 0,
         longPressTimer: null,
         roomLongPressTimer: null,
         contactSearchTimer: null,
@@ -88,6 +89,7 @@
         presenceList: document.getElementById("presenceList"),
         chatStatus: document.getElementById("chatStatus"),
         messagesList: document.getElementById("messagesList"),
+        chatDropOverlay: document.getElementById("chatDropOverlay"),
         messageSelectionBar: document.getElementById("messageSelectionBar"),
         messageSelectionCount: document.getElementById("messageSelectionCount"),
         copySelectedMessagesButton: document.getElementById("copySelectedMessagesButton"),
@@ -758,6 +760,21 @@
         renderSelectedFiles();
     }
 
+    function syncFileInput(files) {
+        if (!files || files.length === 0) {
+            dom.fileInput.value = "";
+            return;
+        }
+
+        if (typeof DataTransfer !== "function") {
+            return;
+        }
+
+        const transfer = new DataTransfer();
+        Array.from(files).forEach((file) => transfer.items.add(file));
+        dom.fileInput.files = transfer.files;
+    }
+
     function toSelectedFileEntry(file) {
         const previewKind = file.type.startsWith("image/")
             ? "image"
@@ -853,6 +870,37 @@
         renderImagePreviewDialog();
         dom.imagePreviewDialog.showModal();
         dom.imageCaptionInput.focus();
+    }
+
+    function hasDraggedFiles(event) {
+        const types = event.dataTransfer?.types;
+
+        if (!types) {
+            return false;
+        }
+
+        return Array.from(types).includes("Files");
+    }
+
+    function setChatDropOverlayVisible(isVisible) {
+        dom.chatDropOverlay.hidden = !isVisible;
+        dom.chatPanel.classList.toggle("is-drop-target", isVisible);
+    }
+
+    function resetChatDropOverlay() {
+        state.dragDepth = 0;
+        setChatDropOverlayVisible(false);
+    }
+
+    function handleIncomingFiles(files) {
+        replaceSelectedFiles(files);
+        syncFileInput(files);
+
+        if (state.selectedFiles.length > 0) {
+            openImagePreviewDialog();
+        }
+
+        renderComposerState();
     }
 
     function closeImagePreviewDialog(clearFiles = false) {
@@ -1000,6 +1048,10 @@
         dom.fileInput.disabled = Boolean(state.editingMessageId || state.busy);
         dom.replyBanner.hidden = !state.replyingMessageId;
         dom.editBanner.hidden = !state.editingMessageId;
+
+        if (!state.room || state.editingMessageId || state.busy) {
+            resetChatDropOverlay();
+        }
     }
 
     function renderQuickRoomState() {
@@ -2530,11 +2582,7 @@
         });
 
         dom.fileInput.addEventListener("change", () => {
-            replaceSelectedFiles(dom.fileInput.files);
-            if (state.selectedFiles.length > 0) {
-                openImagePreviewDialog();
-            }
-            renderComposerState();
+            handleIncomingFiles(dom.fileInput.files);
         });
 
         dom.closeImagePreviewButton.addEventListener("click", () => closeImagePreviewDialog(true));
@@ -2600,6 +2648,63 @@
             if (!dom.sendButton.disabled) {
                 dom.composerForm.requestSubmit();
             }
+        });
+        dom.chatPanel.addEventListener("dragenter", (event) => {
+            if (!state.room || state.editingMessageId || state.busy || !hasDraggedFiles(event)) {
+                return;
+            }
+
+            event.preventDefault();
+            state.dragDepth += 1;
+            setChatDropOverlayVisible(true);
+        });
+        dom.chatPanel.addEventListener("dragover", (event) => {
+            if (!state.room || state.editingMessageId || state.busy || !hasDraggedFiles(event)) {
+                return;
+            }
+
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+
+            if (!dom.chatDropOverlay.hidden) {
+                return;
+            }
+
+            setChatDropOverlayVisible(true);
+        });
+        dom.chatPanel.addEventListener("dragleave", (event) => {
+            if (!hasDraggedFiles(event) || state.dragDepth === 0) {
+                return;
+            }
+
+            state.dragDepth = Math.max(0, state.dragDepth - 1);
+
+            if (state.dragDepth === 0) {
+                setChatDropOverlayVisible(false);
+            }
+        });
+        dom.chatPanel.addEventListener("drop", (event) => {
+            if (!state.room || state.editingMessageId || state.busy || !hasDraggedFiles(event)) {
+                return;
+            }
+
+            event.preventDefault();
+            const files = event.dataTransfer?.files;
+            resetChatDropOverlay();
+
+            if (!files || files.length === 0) {
+                return;
+            }
+
+            handleIncomingFiles(files);
+        });
+        window.addEventListener("dragend", resetChatDropOverlay);
+        window.addEventListener("drop", (event) => {
+            if (event.target instanceof Node && dom.chatPanel.contains(event.target)) {
+                return;
+            }
+
+            resetChatDropOverlay();
         });
         dom.cancelReplyButton.addEventListener("click", exitReplyMode);
         dom.cancelEditButton.addEventListener("click", () => {
