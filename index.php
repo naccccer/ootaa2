@@ -221,6 +221,14 @@ $basePath = app_base_path();
                 <span class="menu-icon lock-icon" aria-hidden="true"></span>
                 <span>رمز</span>
             </button>
+            <button type="button" id="guestRegisterButton" class="menu-item" hidden>
+                <span class="menu-icon user-icon" aria-hidden="true"></span>
+                <span>ثبت‌نام</span>
+            </button>
+            <button type="button" id="guestLoginButton" class="menu-item" hidden>
+                <span class="menu-icon lock-icon" aria-hidden="true"></span>
+                <span>ورود</span>
+            </button>
             <button type="button" id="logoutButton" class="menu-item danger-text">
                 <span class="menu-icon logout-icon" aria-hidden="true"></span>
                 <span>خروج</span>
@@ -363,6 +371,43 @@ $basePath = app_base_path();
             <div id="registerNameStatus" class="inline-status" hidden></div>
             <div class="modal-card__actions">
                 <button type="submit" id="submitRegisterNameButton" class="primary-button">ادامه</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="guestNameDialog" class="modal">
+        <form method="dialog" class="modal-card" id="guestNameForm">
+            <div class="modal-card__head">
+                <h3>نام مهمان</h3>
+            </div>
+            <label class="field">
+                <span>نام</span>
+                <input id="guestNameInput" name="displayName" type="text" maxlength="40" autocomplete="name" placeholder="نام شما">
+            </label>
+            <div id="guestNameStatus" class="inline-status" hidden></div>
+            <div class="modal-card__actions">
+                <button type="submit" id="submitGuestNameButton" class="primary-button">ورود به اتاق</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="guestAuthDialog" class="modal">
+        <form method="dialog" class="modal-card" id="guestAuthForm">
+            <div class="modal-card__head">
+                <h3 id="guestAuthTitle">ثبت‌نام</h3>
+                <button type="button" id="closeGuestAuthDialogButton" class="icon-button close-button" aria-label="بستن"></button>
+            </div>
+            <label class="field">
+                <span>شماره موبایل</span>
+                <input id="guestAuthMobileInput" name="mobile" type="tel" inputmode="numeric" autocomplete="username" placeholder="مثلاً 09123456789">
+            </label>
+            <label class="field">
+                <span>رمز</span>
+                <input id="guestAuthPasswordInput" name="password" type="password" autocomplete="current-password" placeholder="حداقل 8 کاراکتر">
+            </label>
+            <div id="guestAuthStatus" class="inline-status" hidden></div>
+            <div class="modal-card__actions">
+                <button type="submit" id="submitGuestAuthButton" class="primary-button">ادامه</button>
             </div>
         </form>
     </dialog>

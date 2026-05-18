@@ -5,6 +5,7 @@
 
     const state = {
         authMode: "login",
+        guestAuthMode: "register",
         user: null,
         room: null,
         participant: null,
@@ -53,6 +54,18 @@
         closeRegisterNameDialogButton: document.getElementById("closeRegisterNameDialogButton"),
         submitRegisterNameButton: document.getElementById("submitRegisterNameButton"),
         registerNameStatus: document.getElementById("registerNameStatus"),
+        guestNameDialog: document.getElementById("guestNameDialog"),
+        guestNameForm: document.getElementById("guestNameForm"),
+        guestNameInput: document.getElementById("guestNameInput"),
+        guestNameStatus: document.getElementById("guestNameStatus"),
+        guestAuthDialog: document.getElementById("guestAuthDialog"),
+        guestAuthForm: document.getElementById("guestAuthForm"),
+        guestAuthTitle: document.getElementById("guestAuthTitle"),
+        guestAuthMobileInput: document.getElementById("guestAuthMobileInput"),
+        guestAuthPasswordInput: document.getElementById("guestAuthPasswordInput"),
+        closeGuestAuthDialogButton: document.getElementById("closeGuestAuthDialogButton"),
+        submitGuestAuthButton: document.getElementById("submitGuestAuthButton"),
+        guestAuthStatus: document.getElementById("guestAuthStatus"),
         accountName: document.getElementById("accountName"),
         accountMobile: document.getElementById("accountMobile"),
         openAccountMenuButton: document.getElementById("openAccountMenuButton"),
@@ -60,6 +73,8 @@
         closeAccountMenuButton: document.getElementById("closeAccountMenuButton"),
         openProfileButton: document.getElementById("openProfileButton"),
         openPasswordButton: document.getElementById("openPasswordButton"),
+        guestRegisterButton: document.getElementById("guestRegisterButton"),
+        guestLoginButton: document.getElementById("guestLoginButton"),
         logoutButton: document.getElementById("logoutButton"),
         sidebar: document.querySelector(".sidebar"),
         recentRoomsList: document.getElementById("recentRoomsList"),
@@ -413,7 +428,7 @@
             throw new Error("پاسخ سرور معتبر نیست.");
         }
 
-        if (response.status === 401) {
+        if (response.status === 401 && !options.preserveUnauthorized) {
             handleUnauthorized();
             throw new Error(payload?.error?.message || "نشست شما منقضی شده است.");
         }
@@ -946,7 +961,9 @@
 
     function renderShell() {
         const loggedIn = Boolean(state.user);
-        dom.authScreen.hidden = loggedIn;
+        const awaitingGuestName = !loggedIn && Boolean(appConfig.initialRoom);
+        const isGuest = Boolean(state.user?.isGuest);
+        dom.authScreen.hidden = loggedIn || awaitingGuestName;
         dom.appScreen.hidden = !loggedIn;
         dom.appScreen.classList.toggle("has-room", Boolean(state.room));
 
@@ -955,7 +972,16 @@
         }
 
         dom.accountName.textContent = state.user.displayName;
-        dom.accountMobile.textContent = state.user.mobileDisplay;
+        dom.accountMobile.textContent = isGuest ? "مهمان" : state.user.mobileDisplay;
+        dom.openProfileButton.hidden = isGuest;
+        dom.openPasswordButton.hidden = isGuest;
+        dom.guestRegisterButton.hidden = !isGuest;
+        dom.guestLoginButton.hidden = !isGuest;
+        dom.toggleContactSearchButton.hidden = isGuest;
+        dom.quickCreateRoomButton.hidden = isGuest;
+        if (isGuest) {
+            closeContactSearch();
+        }
         dom.welcomePanel.hidden = Boolean(state.room);
         dom.chatPanel.hidden = !state.room;
         renderRecentRooms();
@@ -1038,7 +1064,7 @@
         const participants = state.presence?.participants || [];
 
         dom.presenceList.innerHTML = participants.map((participant) => `
-            <div class="presence-pill">${escapeHtml(participant.displayName)} • ${escapeHtml(participant.mobileDisplay)}</div>
+            <div class="presence-pill">${escapeHtml(participant.displayName)}${participant.mobileDisplay ? ` • ${escapeHtml(participant.mobileDisplay)}` : ""}</div>
         `).join("");
     }
 
@@ -1138,6 +1164,11 @@
     }
 
     async function searchContacts() {
+        if (state.user?.isGuest) {
+            renderContactSearchResults([], "");
+            return;
+        }
+
         const query = dom.contactSearchInput.value.trim();
 
         if (query.length < 2) {
@@ -1170,6 +1201,11 @@
     }
 
     function toggleContactSearch() {
+        if (state.user?.isGuest) {
+            closeContactSearch();
+            return;
+        }
+
         const opening = dom.contactSearchPanel.hidden;
 
         if (opening) {
@@ -1508,6 +1544,9 @@
 
         if (!state.user) {
             renderShell();
+            if (appConfig.initialRoom) {
+                openGuestNameDialog();
+            }
             return;
         }
 
@@ -1659,6 +1698,71 @@
         }
     }
 
+    async function createGuestAndEnter(displayName) {
+        state.busy = true;
+        setStatus(dom.guestNameStatus, "", false);
+
+        try {
+            const data = await fetchJson(apiPath("/api/auth/guest"), {
+                method: "POST",
+                body: JSON.stringify({ displayName })
+            });
+            state.user = data.user;
+            renderShell();
+            closeDialogAnimated(dom.guestNameDialog);
+            await enterRoom(appConfig.initialRoom, true);
+            return true;
+        } catch (error) {
+            setStatus(dom.guestNameStatus, error.message, true);
+            return false;
+        } finally {
+            state.busy = false;
+            renderComposerState();
+        }
+    }
+
+    async function submitGuestAuth(event) {
+        event.preventDefault();
+
+        if (!state.user?.isGuest) {
+            return;
+        }
+
+        state.busy = true;
+        setStatus(dom.guestAuthStatus, "", false);
+
+        try {
+            const endpoint = state.guestAuthMode === "login" ? "/api/auth/login" : "/api/auth/register";
+            const payload = {
+                mobile: dom.guestAuthMobileInput.value.trim(),
+                password: dom.guestAuthPasswordInput.value
+            };
+
+            if (state.guestAuthMode === "register") {
+                payload.displayName = state.user.displayName;
+            }
+
+            const data = await fetchJson(apiPath(endpoint), {
+                method: "POST",
+                preserveUnauthorized: true,
+                body: JSON.stringify(payload)
+            });
+            state.user = data.user;
+            closeDialogAnimated(dom.guestAuthDialog);
+            dom.guestAuthForm.reset();
+            renderShell();
+
+            if (state.room) {
+                await bootstrapRoom();
+            }
+        } catch (error) {
+            setStatus(dom.guestAuthStatus, error.message, true);
+        } finally {
+            state.busy = false;
+            renderComposerState();
+        }
+    }
+
     async function handleLogout() {
         try {
             await fetchJson(apiPath("/api/auth/logout"), {
@@ -1671,6 +1775,9 @@
 
         leaveRoom();
         handleUnauthorized();
+        if (appConfig.initialRoom) {
+            openGuestNameDialog();
+        }
     }
 
     async function submitProfile(event) {
@@ -2252,6 +2359,29 @@
         closeDialogAnimated(dom.registerNameDialog, () => setStatus(dom.registerNameStatus, "", false));
     }
 
+    function openGuestNameDialog() {
+        if (!dom.guestNameDialog.open) {
+            setStatus(dom.guestNameStatus, "", false);
+            dom.guestNameDialog.showModal();
+            dom.guestNameInput.focus();
+        }
+    }
+
+    function openGuestAuthDialog(mode) {
+        state.guestAuthMode = mode;
+        dom.guestAuthTitle.textContent = mode === "login" ? "ورود" : "ثبت‌نام";
+        dom.submitGuestAuthButton.textContent = mode === "login" ? "ورود" : "ثبت‌نام";
+        dom.guestAuthPasswordInput.autocomplete = mode === "login" ? "current-password" : "new-password";
+        dom.guestAuthForm.reset();
+        setStatus(dom.guestAuthStatus, "", false);
+
+        if (!dom.guestAuthDialog.open) {
+            dom.guestAuthDialog.showModal();
+        }
+
+        dom.guestAuthMobileInput.focus();
+    }
+
     function openAccountMenu() {
         if (!dom.accountMenuDialog.open) {
             dom.accountMenuDialog.showModal();
@@ -2289,7 +2419,7 @@
             return;
         }
 
-        dom.profileMobileInput.value = state.user.mobileDisplay;
+        dom.profileMobileInput.value = state.user.mobileDisplay || "";
         dom.profileNameInput.value = state.user.displayName;
         setStatus(dom.profileStatus, "", false);
         dom.profileDialog.showModal();
@@ -2335,6 +2465,14 @@
         dom.logoutButton.addEventListener("click", () => {
             closeAccountMenu();
             handleLogout();
+        });
+        dom.guestRegisterButton.addEventListener("click", () => {
+            closeAccountMenu();
+            openGuestAuthDialog("register");
+        });
+        dom.guestLoginButton.addEventListener("click", () => {
+            closeAccountMenu();
+            openGuestAuthDialog("login");
         });
         dom.openAccountMenuButton.addEventListener("click", openAccountMenu);
         dom.closeAccountMenuButton.addEventListener("click", closeAccountMenu);
@@ -2430,6 +2568,20 @@
             }
         });
         dom.closeRegisterNameDialogButton.addEventListener("click", closeRegisterNameDialog);
+        dom.guestNameForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+            const displayName = dom.guestNameInput.value.trim();
+
+            if (!displayName) {
+                setStatus(dom.guestNameStatus, "نام را وارد کنید.", true);
+                dom.guestNameInput.focus();
+                return;
+            }
+
+            createGuestAndEnter(displayName);
+        });
+        dom.guestAuthForm.addEventListener("submit", submitGuestAuth);
+        dom.closeGuestAuthDialogButton.addEventListener("click", () => closeDialogAnimated(dom.guestAuthDialog));
         dom.openProfileButton.addEventListener("click", () => {
             closeAccountMenu();
             openProfileDialog();
@@ -2503,6 +2655,11 @@
 
         dom.quickCreateRoomButton.addEventListener("click", async () => {
             setStatus(dom.chatStatus, "", false);
+
+            if (state.user?.isGuest) {
+                setStatus(dom.chatStatus, "مهمان فقط می‌تواند وارد اتاق موجود شود.", true);
+                return;
+            }
 
             try {
                 await enterRoom("", false);

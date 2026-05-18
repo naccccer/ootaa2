@@ -36,6 +36,10 @@ class RoomService
         $userId = (int) $user['id'];
 
         if ($normalizedRoomCode === null) {
+            if (($user['kind'] ?? 'registered') === 'guest') {
+                throw new ApiException('مهمان فقط می تواند وارد اتاق موجود شود.', 403);
+            }
+
             $room = $this->createRoom($userId);
         } else {
             $room = $this->findRoomByCode($normalizedRoomCode);
@@ -162,7 +166,7 @@ class RoomService
                 'room_id' => (int) $room['id'],
                 'user_id' => (int) $user['id'],
                 'sender_display_name' => (string) $user['display_name'],
-                'sender_mobile_display' => MobileNumber::toDisplay((string) $user['mobile_normalized']),
+                'sender_mobile_display' => $this->mobileDisplayForUser($user),
                 'body_text' => $bodyText,
                 'parent_message_id' => $replyToId,
                 'created_at' => $now,
@@ -456,7 +460,7 @@ class RoomService
             'participant' => [
                 'id' => (int) $participant['id'],
                 'displayName' => (string) $participant['display_name'],
-                'mobileDisplay' => (string) $participant['mobile_display'],
+                'mobileDisplay' => $participant['mobile_display'] === null ? null : (string) $participant['mobile_display'],
                 'joinedAt' => (string) $participant['joined_at'],
                 'lastSeenAt' => $now,
             ],
@@ -467,7 +471,7 @@ class RoomService
     {
         $now = $this->now();
         $displayName = (string) $user['display_name'];
-        $mobileDisplay = MobileNumber::toDisplay((string) $user['mobile_normalized']);
+        $mobileDisplay = $this->mobileDisplayForUser($user);
         $statement = $this->pdo->prepare(
             'INSERT INTO participants (room_id, user_id, display_name, mobile_display, joined_at, last_seen_at)
              VALUES (:room_id, :user_id, :display_name, :mobile_display, :joined_at, :last_seen_at)
@@ -501,7 +505,7 @@ class RoomService
         return [
             'id' => (int) $participant['id'],
             'displayName' => (string) $participant['display_name'],
-            'mobileDisplay' => (string) $participant['mobile_display'],
+            'mobileDisplay' => $participant['mobile_display'] === null ? null : (string) $participant['mobile_display'],
             'joinedAt' => (string) $participant['joined_at'],
             'lastSeenAt' => (string) $participant['last_seen_at'],
         ];
@@ -554,7 +558,7 @@ class RoomService
             'participants' => array_map(static function (array $participant): array {
                 return [
                     'displayName' => (string) $participant['display_name'],
-                    'mobileDisplay' => (string) $participant['mobile_display'],
+                    'mobileDisplay' => $participant['mobile_display'] === null ? null : (string) $participant['mobile_display'],
                     'lastSeenAt' => (string) $participant['last_seen_at'],
                 ];
             }, $participants),
@@ -782,7 +786,7 @@ class RoomService
                 'id' => $messageId,
                 'roomId' => (int) $message['room_id'],
                 'senderName' => (string) $message['sender_display_name'],
-                'senderMobile' => (string) $message['sender_mobile_display'],
+                'senderMobile' => $message['sender_mobile_display'] === null ? null : (string) $message['sender_mobile_display'],
                 'bodyText' => $message['body_text'],
                 'createdAt' => (string) $message['created_at'],
                 'updatedAt' => (string) $message['updated_at'],
@@ -812,7 +816,7 @@ class RoomService
             'id' => (int) $message['id'],
             'roomId' => (int) $message['room_id'],
             'senderName' => (string) $message['sender_display_name'],
-            'senderMobile' => (string) $message['sender_mobile_display'],
+            'senderMobile' => $message['sender_mobile_display'] === null ? null : (string) $message['sender_mobile_display'],
             'bodyText' => $message['body_text'],
             'createdAt' => (string) $message['created_at'],
             'updatedAt' => (string) $message['updated_at'],
@@ -873,7 +877,7 @@ class RoomService
         return [
             'id' => (int) $message['id'],
             'senderName' => (string) $message['sender_display_name'],
-            'senderMobile' => (string) $message['sender_mobile_display'],
+            'senderMobile' => $message['sender_mobile_display'] === null ? null : (string) $message['sender_mobile_display'],
             'bodyText' => $message['body_text'],
             'isDeleted' => $message['deleted_at'] !== null,
         ];
@@ -1039,6 +1043,15 @@ class RoomService
             'lastActivityAt' => (string) $room['last_activity_at'],
             'expiresAt' => (string) $room['expires_at'],
         ];
+    }
+
+    private function mobileDisplayForUser(array $user): ?string
+    {
+        $mobileNormalized = $user['mobile_normalized'] ?? null;
+
+        return is_string($mobileNormalized) && $mobileNormalized !== ''
+            ? MobileNumber::toDisplay($mobileNormalized)
+            : null;
     }
 
     private function now(): string

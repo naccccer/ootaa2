@@ -11,9 +11,11 @@ $baseUrl = rtrim($argv[1] ?? 'http://localhost/ootaa2', '/');
 $cookieOne = tempnam(sys_get_temp_dir(), 'ootaa2-user-1-');
 $cookieOneSecondDevice = tempnam(sys_get_temp_dir(), 'ootaa2-user-1b-');
 $cookieTwo = tempnam(sys_get_temp_dir(), 'ootaa2-user-2-');
+$cookieGuest = tempnam(sys_get_temp_dir(), 'ootaa2-guest-');
+$cookieGuestExisting = tempnam(sys_get_temp_dir(), 'ootaa2-guest-existing-');
 $tempDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ootaa2-smoke-' . bin2hex(random_bytes(4));
 
-if ($cookieOne === false || $cookieOneSecondDevice === false || $cookieTwo === false) {
+if ($cookieOne === false || $cookieOneSecondDevice === false || $cookieTwo === false || $cookieGuest === false || $cookieGuestExisting === false) {
     fwrite(STDERR, "Could not create temporary cookie files.\n");
     exit(1);
 }
@@ -222,6 +224,89 @@ try {
     writePng($pngPath);
     file_put_contents($textPath, 'private file test');
 
+    $guest = requestJson('POST', $baseUrl . '/api/auth/guest', $cookieGuest, [
+        'json' => [
+            'displayName' => 'Guest One',
+        ],
+    ]);
+    assert_true(($guest['user']['isGuest'] ?? false) === true, 'Guest auth should create a guest user.');
+    assert_true(array_key_exists('mobileDisplay', $guest['user']) && $guest['user']['mobileDisplay'] === null, 'Guest should not expose a mobile display.');
+
+    $guestCreateRoom = request('POST', $baseUrl . '/api/room/enter', $cookieGuest, [
+        'json' => [
+            'roomCode' => '',
+        ],
+    ]);
+    assert_true($guestCreateRoom['status'] === 403, 'Guest should not be able to create a room.');
+
+    $guestEnter = requestJson('POST', $baseUrl . '/api/room/enter', $cookieGuest, [
+        'json' => [
+            'roomCode' => $roomCode,
+        ],
+    ]);
+    assert_true(($guestEnter['participant']['mobileDisplay'] ?? null) === null, 'Guest participant should not need a mobile display.');
+
+    $guestSend = requestJson('POST', $baseUrl . '/api/room/messages', $cookieGuest, [
+        'multipart' => [
+            'roomCode' => $roomCode,
+            'text' => 'guest file',
+            'files[0]' => new CURLFile($pngPath, 'image/png', 'guest.png'),
+        ],
+    ]);
+    $guestMessageId = (int) $guestSend['message']['id'];
+    assert_true(($guestSend['message']['senderMobile'] ?? null) === null, 'Guest message should not need sender mobile.');
+    assert_true(count($guestSend['message']['attachments']) === 1, 'Guest should be able to upload an attachment.');
+
+    $guestDownloadAllowed = request('GET', absoluteUrl($baseUrl, $guestSend['message']['attachments'][0]['url']), $cookieGuest);
+    $guestDownloadBlocked = request('GET', absoluteUrl($baseUrl, $guestSend['message']['attachments'][0]['url']));
+    assert_true($guestDownloadAllowed['status'] === 200, 'Guest room participant should access room attachments.');
+    assert_true($guestDownloadBlocked['status'] === 401, 'Anonymous visitor should not access guest uploaded attachments.');
+
+    $guestRegistered = requestJson('POST', $baseUrl . '/api/auth/register', $cookieGuest, [
+        'json' => [
+            'mobile' => '09330001122',
+            'displayName' => 'Guest Registered',
+            'password' => 'guestpass123',
+        ],
+    ]);
+    assert_true(($guestRegistered['user']['isGuest'] ?? true) === false, 'Guest registration should convert the guest into a registered user.');
+
+    $guestAfterRegisterMessages = requestJson('GET', $baseUrl . '/api/room/messages?code=' . urlencode($roomCode), $cookieGuest);
+    $registeredGuestMessage = current(array_filter($guestAfterRegisterMessages['messages'], static fn (array $message): bool => (int) $message['id'] === $guestMessageId));
+    assert_true(is_array($registeredGuestMessage) && ($registeredGuestMessage['isOwn'] ?? false) === true, 'Guest message should remain own after registration.');
+
+    $guestExisting = requestJson('POST', $baseUrl . '/api/auth/guest', $cookieGuestExisting, [
+        'json' => [
+            'displayName' => 'Guest Existing',
+        ],
+    ]);
+    assert_true(($guestExisting['user']['isGuest'] ?? false) === true, 'Second guest auth should create a guest user.');
+
+    requestJson('POST', $baseUrl . '/api/room/enter', $cookieGuestExisting, [
+        'json' => [
+            'roomCode' => $roomCode,
+        ],
+    ]);
+    $guestExistingSend = requestJson('POST', $baseUrl . '/api/room/messages', $cookieGuestExisting, [
+        'multipart' => [
+            'roomCode' => $roomCode,
+            'text' => 'guest before existing login',
+        ],
+    ]);
+    $guestExistingMessageId = (int) $guestExistingSend['message']['id'];
+
+    $guestLoginTransfer = requestJson('POST', $baseUrl . '/api/auth/login', $cookieGuestExisting, [
+        'json' => [
+            'mobile' => '09121234567',
+            'password' => 'secret456',
+        ],
+    ]);
+    assert_true(($guestLoginTransfer['user']['id'] ?? 0) === ($userTwo['user']['id'] ?? -1), 'Guest login should transfer data to the existing account.');
+
+    $transferredMessages = requestJson('GET', $baseUrl . '/api/room/messages?code=' . urlencode($roomCode), $cookieGuestExisting);
+    $transferredMessage = current(array_filter($transferredMessages['messages'], static fn (array $message): bool => (int) $message['id'] === $guestExistingMessageId));
+    assert_true(is_array($transferredMessage) && ($transferredMessage['isOwn'] ?? false) === true, 'Transferred guest message should belong to the logged-in account.');
+
     $send = requestJson('POST', $baseUrl . '/api/room/messages', $cookieOne, [
         'multipart' => [
             'roomCode' => $roomCode,
@@ -358,6 +443,8 @@ try {
     @unlink($cookieOne);
     @unlink($cookieOneSecondDevice);
     @unlink($cookieTwo);
+    @unlink($cookieGuest);
+    @unlink($cookieGuestExisting);
 
     if (is_dir($tempDir)) {
         foreach (glob($tempDir . DIRECTORY_SEPARATOR . '*') ?: [] as $path) {

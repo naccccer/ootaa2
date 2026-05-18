@@ -29,6 +29,12 @@ try {
         ), 201);
     }
 
+    if ($route === 'auth/guest' && $method === 'POST') {
+        JsonResponse::success($auth->createGuest(
+            (string) Request::input('displayName', '')
+        ), 201);
+    }
+
     if ($route === 'auth/login' && $method === 'POST') {
         JsonResponse::success($auth->login(
             (string) Request::input('mobile', ''),
@@ -45,7 +51,7 @@ try {
     }
 
     if ($route === 'account/profile' && $method === 'PATCH') {
-        $user = $auth->requireAuthenticatedUser();
+        $user = $auth->requireRegisteredUser();
 
         JsonResponse::success($auth->updateProfile(
             (int) $user['id'],
@@ -54,7 +60,7 @@ try {
     }
 
     if ($route === 'account/password' && $method === 'PATCH') {
-        $user = $auth->requireAuthenticatedUser();
+        $user = $auth->requireRegisteredUser();
 
         JsonResponse::success($auth->updatePassword(
             (int) $user['id'],
@@ -64,7 +70,7 @@ try {
     }
 
     if ($route === 'contacts/search' && $method === 'GET') {
-        $user = $auth->requireAuthenticatedUser();
+        $user = $auth->requireRegisteredUser();
 
         JsonResponse::success($auth->searchUsers(
             (string) Request::query('q', ''),
