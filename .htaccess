@@ -1,5 +1,9 @@
 Options -Indexes
 
+SetEnv SMSIR_FAKE false
+SetEnv SMSIR_API_KEY "xNnZenpVn9ekpLcuScResxeDUCWHpj3eq7KscubLvYiKfjbY"
+SetEnv SMSIR_TEMPLATE_ID "440884"
+
 RewriteEngine On
 
 RewriteRule ^(?:src|config|database|scripts|storage)(?:/|$) - [F,L]

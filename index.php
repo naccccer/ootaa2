@@ -28,10 +28,10 @@ $basePath = app_base_path();
             <div class="auth-card">
                 <div class="auth-hero">
                     <span class="auth-kicker">اوتا</span>
-                    <h1>اوتا</h1>
+                    <h1>ootaa.ir</h1>
                 </div>
 
-                <div class="auth-tabs" role="tablist" aria-label="ورود و ثبت‌نام">
+                <div class="auth-tabs" role="tablist" aria-label="ورود و ثبت‌نام" hidden>
                     <button type="button" id="loginTabButton" class="auth-tab is-active" data-auth-mode="login">ورود</button>
                     <button type="button" id="registerTabButton" class="auth-tab" data-auth-mode="register">ثبت‌نام</button>
                 </div>
@@ -41,12 +41,8 @@ $basePath = app_base_path();
                         <span>شماره موبایل</span>
                         <input id="loginMobileInput" name="mobile" type="tel" inputmode="numeric" autocomplete="username" placeholder="مثلاً 09123456789">
                     </label>
-                    <label class="field">
-                        <span>رمز</span>
-                        <input id="loginPasswordInput" name="password" type="password" autocomplete="current-password" placeholder="حداقل 8 کاراکتر">
-                    </label>
-                    <button id="loginSubmitButton" type="submit" class="primary-button">ورود</button>
-                    <div class="auth-inline-actions">
+                    <button id="loginSubmitButton" type="submit" class="primary-button">ورود / ثبت‌نام</button>
+                    <div class="auth-inline-actions" hidden>
                         <button id="loginOtpButton" type="button" class="auth-link-button">ورود با کد یکبارمصرف</button>
                         <button id="forgotPasswordButton" type="button" class="auth-link-button">فراموشی رمز</button>
                     </div>
@@ -65,6 +61,7 @@ $basePath = app_base_path();
                     <button id="registerSubmitButton" type="submit" class="primary-button">ساخت حساب</button>
                 </form>
 
+                <button type="button" id="authGuestButton" class="guest-entry-button">ورود مهمان با کد اتاق</button>
                 <div id="authStatus" class="inline-status" hidden></div>
             </div>
         </section>
@@ -83,7 +80,7 @@ $basePath = app_base_path();
                     <form id="quickRoomForm" class="quick-room-form">
                         <button type="button" id="toggleContactSearchButton" class="icon-button search-button" aria-label="جستجوی مخاطب"></button>
                         <div class="quick-room-field-stack">
-                            <input id="quickRoomCodeInput" class="quick-room-code-input" name="roomCode" type="text" inputmode="numeric" maxlength="4" pattern="\d{4}" placeholder="کد ۴ رقمی" aria-label="کد اتاق">
+                            <input id="quickRoomCodeInput" class="quick-room-code-input" name="roomCode" type="text" inputmode="numeric" maxlength="4" pattern="\d{4}" placeholder="کد ۴ رقمی اتاق" aria-label="کد اتاق">
                             <input id="contactSearchInput" class="quick-contact-search-input" type="search" autocomplete="off" placeholder="نام یا شماره موبایل" aria-label="جستجوی مخاطب">
                         </div>
                         <button type="submit" id="quickJoinRoomButton" class="icon-button join-button" aria-label="ورود به اتاق"></button>
@@ -388,6 +385,10 @@ $basePath = app_base_path();
                 <span>نام</span>
                 <input id="guestNameInput" name="displayName" type="text" maxlength="40" autocomplete="name" placeholder="نام شما">
             </label>
+            <label class="field">
+                <span>کد اتاق</span>
+                <input id="guestRoomCodeInput" name="roomCode" type="text" inputmode="numeric" maxlength="4" pattern="\d{4}" placeholder="کد ۴ رقمی اتاق">
+            </label>
             <div id="guestNameStatus" class="inline-status" hidden></div>
             <div class="modal-card__actions">
                 <button type="submit" id="submitGuestNameButton" class="primary-button">ورود به اتاق</button>
@@ -456,7 +457,7 @@ $basePath = app_base_path();
             <p id="roomDialogDescription" class="modal-card__copy"></p>
             <label class="field">
                 <span>کد اتاق</span>
-                <input id="roomCodeInput" name="roomCode" type="text" inputmode="numeric" maxlength="4" pattern="\d{4}" placeholder="کد 4 رقمی">
+                <input id="roomCodeInput" name="roomCode" type="text" inputmode="numeric" maxlength="4" pattern="\d{4}" placeholder="کد ۴ رقمی اتاق">
             </label>
             <div id="roomDialogStatus" class="inline-status" hidden></div>
             <div class="modal-card__actions">

@@ -50,7 +50,6 @@
         loginForm: document.getElementById("loginForm"),
         registerForm: document.getElementById("registerForm"),
         loginMobileInput: document.getElementById("loginMobileInput"),
-        loginPasswordInput: document.getElementById("loginPasswordInput"),
         registerMobileInput: document.getElementById("registerMobileInput"),
         registerNameInput: document.getElementById("registerNameInput"),
         registerPasswordInput: document.getElementById("registerPasswordInput"),
@@ -58,6 +57,7 @@
         registerSubmitButton: document.getElementById("registerSubmitButton"),
         loginOtpButton: document.getElementById("loginOtpButton"),
         forgotPasswordButton: document.getElementById("forgotPasswordButton"),
+        authGuestButton: document.getElementById("authGuestButton"),
         authStatus: document.getElementById("authStatus"),
         registerNameDialog: document.getElementById("registerNameDialog"),
         registerNameForm: document.getElementById("registerNameForm"),
@@ -68,6 +68,7 @@
         guestNameDialog: document.getElementById("guestNameDialog"),
         guestNameForm: document.getElementById("guestNameForm"),
         guestNameInput: document.getElementById("guestNameInput"),
+        guestRoomCodeInput: document.getElementById("guestRoomCodeInput"),
         guestNameStatus: document.getElementById("guestNameStatus"),
         guestAuthDialog: document.getElementById("guestAuthDialog"),
         guestAuthForm: document.getElementById("guestAuthForm"),
@@ -358,6 +359,18 @@
         target.hidden = false;
         target.textContent = message;
         target.classList.toggle("is-error", Boolean(isError));
+    }
+
+    function showAuthToast(message) {
+        const toast = document.createElement("div");
+        toast.className = "auth-toast";
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        window.setTimeout(() => {
+            toast.classList.add("is-leaving");
+            window.setTimeout(() => toast.remove(), 240);
+        }, 2400);
     }
 
     function animateHide(element, className, callback) {
@@ -1071,7 +1084,7 @@
         const isVerifyLike = step === "verify" || step === "reset";
 
         dom.authOtpTitle.textContent = copy.title;
-        dom.authOtpDescription.textContent = copy.description;
+        dom.authOtpDescription.textContent = step === "verify" ? "" : copy.description;
         dom.submitAuthOtpButton.textContent = copy.submitLabel;
         dom.authOtpMobileField.hidden = step !== "request";
         dom.authOtpCodeField.hidden = !isVerifyLike;
@@ -1132,6 +1145,10 @@
     async function finishAuthenticatedUser(user) {
         state.user = user;
         renderShell();
+        dom.appScreen.classList.remove("is-login-enter");
+        void dom.appScreen.offsetWidth;
+        dom.appScreen.classList.add("is-login-enter");
+        window.setTimeout(() => dom.appScreen.classList.remove("is-login-enter"), 1300);
 
         if (appConfig.initialRoom) {
             await enterRoom(appConfig.initialRoom, true);
@@ -1685,7 +1702,7 @@
         }
     }
 
-    function handleUnauthorized() {
+    function handleUnauthorized(showMessage = true) {
         stopPolling();
         state.user = null;
         state.room = null;
@@ -1704,7 +1721,7 @@
         state.selectedMessageIds.clear();
         clearSelectedFiles();
         renderShell();
-        setStatus(dom.authStatus, "نشست شما منقضی شده است. دوباره وارد شوید.", true);
+        setStatus(dom.authStatus, showMessage ? "نشست شما منقضی شده است. دوباره وارد شوید." : "", true);
     }
 
     async function loadCurrentUser() {
@@ -1872,7 +1889,38 @@
         }
     }
 
-    async function createGuestAndEnter(displayName) {
+    async function startUnifiedAuthOtp(mobile) {
+        const normalizedMobile = String(mobile || "").trim();
+
+        state.busy = true;
+        renderComposerState();
+        setStatus(dom.authStatus, "", false);
+
+        try {
+            resetAuthOtpFlow();
+            state.authOtpFlow.purpose = "login";
+            state.authOtpFlow.step = "request";
+            state.authOtpFlow.mobile = normalizedMobile;
+            dom.authOtpMobileInput.value = normalizedMobile;
+            await requestCurrentAuthOtp();
+
+            if (!dom.authOtpDialog.open) {
+                dom.authOtpDialog.showModal();
+            }
+
+            window.setTimeout(() => dom.authOtpCodeInput.focus(), 20);
+            return true;
+        } catch (error) {
+            setStatus(dom.authStatus, error.message, true);
+            closeDialogAnimated(dom.authOtpDialog, resetAuthOtpFlow);
+            return false;
+        } finally {
+            state.busy = false;
+            renderComposerState();
+        }
+    }
+
+    async function createGuestAndEnter(displayName, roomCode) {
         state.busy = true;
         setStatus(dom.guestNameStatus, "", false);
 
@@ -1884,7 +1932,7 @@
             state.user = data.user;
             renderShell();
             closeDialogAnimated(dom.guestNameDialog);
-            await enterRoom(appConfig.initialRoom, true);
+            await enterRoom(roomCode, true);
             return true;
         } catch (error) {
             setStatus(dom.guestNameStatus, error.message, true);
@@ -1941,7 +1989,7 @@
         const purpose = state.authOtpFlow.purpose;
         const mobile = dom.authOtpMobileInput.value.trim();
         const payload = { mobile };
-        let endpoint = "/api/auth/login/request-otp";
+        let endpoint = "/api/auth/request-otp";
 
         if (purpose === "register") {
             payload.displayName = state.authOtpFlow.displayName;
@@ -1961,7 +2009,8 @@
         state.authOtpFlow.step = purpose === "password_reset" ? "reset" : "verify";
         startAuthOtpCooldown(data.cooldownSeconds || 0);
         renderAuthOtpDialog();
-        setStatus(dom.authOtpStatus, "کد ارسال شد.", false);
+        setStatus(dom.authOtpStatus, "", false);
+        showAuthToast("کد ارسال شد.");
     }
 
     async function submitAuthOtp(event) {
@@ -2046,7 +2095,6 @@
                     })
                 });
                 state.authOtpFlow.step = "request";
-                dom.loginPasswordInput.value = "";
                 closeDialogAnimated(dom.authOtpDialog, resetAuthOtpFlow);
                 setStatus(dom.authStatus, "رمز جدید ثبت شد. حالا می‌توانید وارد شوید.", false);
                 if (data.user?.mobileDisplay) {
@@ -2083,7 +2131,7 @@
         }
 
         leaveRoom();
-        handleUnauthorized();
+        handleUnauthorized(false);
         if (appConfig.initialRoom) {
             openGuestNameDialog();
         }
@@ -2394,7 +2442,7 @@
         let rawLeft = typeof anchor?.x === "number" ? anchor.x : bounds.left + ((bounds.width - width) / 2);
         const rawTop = typeof anchor?.y === "number" ? anchor.y : bounds.top + padding;
 
-        if (anchor?.messageRect) {
+        if (anchor?.messageRect && !anchor.useClickPoint) {
             rawLeft = anchor.preferredSide === "left"
                 ? anchor.messageRect.left - width - 6
                 : anchor.messageRect.right + 6;
@@ -2671,8 +2719,9 @@
     function openGuestNameDialog() {
         if (!dom.guestNameDialog.open) {
             setStatus(dom.guestNameStatus, "", false);
+            dom.guestRoomCodeInput.value = appConfig.initialRoom || dom.guestRoomCodeInput.value || "";
             dom.guestNameDialog.showModal();
-            dom.guestNameInput.focus();
+            (dom.guestNameInput.value.trim() ? dom.guestRoomCodeInput : dom.guestNameInput).focus();
         }
     }
 
@@ -2691,10 +2740,44 @@
         dom.guestAuthMobileInput.focus();
     }
 
-    function openAccountMenu() {
-        if (!dom.accountMenuDialog.open) {
-            dom.accountMenuDialog.showModal();
+    function positionAnchoredMenu(dialog, anchor, align = "end") {
+        const gap = 8;
+        const margin = 12;
+        const anchorRect = anchor.getBoundingClientRect();
+        const card = dialog.querySelector(".menu-card");
+        const cardRect = card.getBoundingClientRect();
+        const width = cardRect.width;
+        const height = cardRect.height;
+        const frame = (dom.appScreen && !dom.appScreen.hidden ? dom.appScreen : document.documentElement).getBoundingClientRect();
+        const minLeft = Math.max(margin, frame.left + margin);
+        const maxLeft = Math.min(window.innerWidth - width - margin, frame.right - width - margin);
+        const minTop = Math.max(margin, frame.top + margin);
+        const maxTop = Math.min(window.innerHeight - height - margin, frame.bottom - height - margin);
+        const preferredLeft = align === "start" ? anchorRect.left : anchorRect.right - width;
+        const left = Math.min(Math.max(preferredLeft, minLeft), Math.max(minLeft, maxLeft));
+        const belowTop = anchorRect.bottom + gap;
+        const aboveTop = anchorRect.top - height - gap;
+        const top = belowTop <= maxTop
+            ? belowTop
+            : Math.min(Math.max(aboveTop, minTop), Math.max(minTop, maxTop));
+
+        dialog.style.left = `${left}px`;
+        dialog.style.top = `${top}px`;
+    }
+
+    function openAnchoredMenu(dialog, anchor, align = "end") {
+        if (dialog.open) {
+            closeDialogAnimated(dialog);
+            return;
         }
+
+        dialog.show();
+        positionAnchoredMenu(dialog, anchor, align);
+    }
+
+    function openAccountMenu() {
+        closeRoomMenu();
+        openAnchoredMenu(dom.accountMenuDialog, dom.openAccountMenuButton, "start");
     }
 
     function closeAccountMenu() {
@@ -2708,9 +2791,8 @@
             return;
         }
 
-        if (!dom.roomMenuDialog.open) {
-            dom.roomMenuDialog.showModal();
-        }
+        closeAccountMenu();
+        openAnchoredMenu(dom.roomMenuDialog, dom.openRoomMenuButton, "end");
     }
 
     function closeRoomMenu() {
@@ -2763,12 +2845,10 @@
 
         dom.loginForm.addEventListener("submit", (event) => {
             event.preventDefault();
-            handleAuthSubmit("login", dom.loginForm);
+            startUnifiedAuthOtp(dom.loginMobileInput.value);
         });
         dom.loginOtpButton.addEventListener("click", () => {
-            openAuthOtpDialog("login", {
-                mobile: dom.loginMobileInput.value.trim()
-            });
+            startUnifiedAuthOtp(dom.loginMobileInput.value);
         });
         dom.forgotPasswordButton.addEventListener("click", () => {
             openAuthOtpDialog("password_reset", {
@@ -2778,8 +2858,10 @@
 
         dom.registerForm.addEventListener("submit", (event) => {
             event.preventDefault();
-            openRegisterNameDialog();
+            startUnifiedAuthOtp(dom.registerMobileInput.value);
         });
+
+        dom.authGuestButton.addEventListener("click", openGuestNameDialog);
 
         dom.logoutButton.addEventListener("click", () => {
             closeAccountMenu();
@@ -2903,6 +2985,7 @@
         dom.guestNameForm.addEventListener("submit", (event) => {
             event.preventDefault();
             const displayName = dom.guestNameInput.value.trim();
+            const roomCode = dom.guestRoomCodeInput.value.trim();
 
             if (!displayName) {
                 setStatus(dom.guestNameStatus, "نام را وارد کنید.", true);
@@ -2910,7 +2993,13 @@
                 return;
             }
 
-            createGuestAndEnter(displayName);
+            if (!/^\d{4}$/.test(roomCode)) {
+                setStatus(dom.guestNameStatus, "کد اتاق باید ۴ رقمی باشد.", true);
+                dom.guestRoomCodeInput.focus();
+                return;
+            }
+
+            createGuestAndEnter(displayName, roomCode);
         });
         dom.guestAuthForm.addEventListener("submit", submitGuestAuth);
         dom.closeGuestAuthDialogButton.addEventListener("click", () => closeDialogAnimated(dom.guestAuthDialog));
@@ -3059,7 +3148,8 @@
                 x: event.clientX,
                 y: event.clientY,
                 messageRect: button.getBoundingClientRect(),
-                preferredSide: "left"
+                preferredSide: "left",
+                useClickPoint: true
             });
         });
 
@@ -3081,7 +3171,8 @@
                     x: event.clientX,
                     y: event.clientY,
                     messageRect: button.getBoundingClientRect(),
-                    preferredSide: "left"
+                    preferredSide: "left",
+                    useClickPoint: true
                 });
             }, 520);
         });
@@ -3313,7 +3404,8 @@
                     x: event.clientX,
                     y: event.clientY,
                     messageRect: attachmentElement.getBoundingClientRect(),
-                    preferredSide: message.classList.contains("is-own") ? "left" : "right"
+                    preferredSide: message.classList.contains("is-own") ? "left" : "right",
+                    useClickPoint: true
                 });
                 return;
             }
@@ -3327,7 +3419,8 @@
                 x: event.clientX,
                 y: event.clientY,
                 messageRect: message.getBoundingClientRect(),
-                preferredSide: message.classList.contains("is-own") ? "left" : "right"
+                preferredSide: message.classList.contains("is-own") ? "left" : "right",
+                useClickPoint: true
             });
         });
 
@@ -3355,7 +3448,8 @@
                         x: event.clientX,
                         y: event.clientY,
                         messageRect: attachmentElement.getBoundingClientRect(),
-                        preferredSide: message.classList.contains("is-own") ? "left" : "right"
+                        preferredSide: message.classList.contains("is-own") ? "left" : "right",
+                        useClickPoint: true
                     });
                     return;
                 }
@@ -3368,7 +3462,8 @@
                     x: event.clientX,
                     y: event.clientY,
                     messageRect: message.getBoundingClientRect(),
-                    preferredSide: message.classList.contains("is-own") ? "left" : "right"
+                    preferredSide: message.classList.contains("is-own") ? "left" : "right",
+                    useClickPoint: true
                 });
             }, 520);
         });
@@ -3404,6 +3499,14 @@
                 closeMessageMenu();
             }
 
+            if (dom.accountMenuDialog.open && !event.target.closest("#accountMenuDialog") && !event.target.closest("#openAccountMenuButton")) {
+                closeAccountMenu();
+            }
+
+            if (dom.roomMenuDialog.open && !event.target.closest("#roomMenuDialog") && !event.target.closest("#openRoomMenuButton")) {
+                closeRoomMenu();
+            }
+
             if (dom.roomContextMenuDialog.open && !event.target.closest("#roomContextMenuDialog")) {
                 closeRoomContextMenu();
             }
@@ -3411,6 +3514,8 @@
 
         window.addEventListener("resize", () => {
             closeEmojiPicker();
+            closeAccountMenu();
+            closeRoomMenu();
             closeMessageMenu();
             closeRoomContextMenu();
         });

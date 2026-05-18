@@ -218,6 +218,64 @@ button {
     }
 }
 
+@keyframes auth-logo-type {
+    from {
+        clip-path: inset(0 100% 0 0);
+        opacity: 0.88;
+    }
+
+    to {
+        clip-path: inset(0 0 0 0);
+        opacity: 1;
+    }
+}
+
+@keyframes auth-logo-caret {
+    0%, 100% {
+        opacity: 0.95;
+    }
+
+    50% {
+        opacity: 0.18;
+    }
+}
+
+@keyframes auth-logo-caret-move {
+    from {
+        inset-inline-start: 0;
+    }
+
+    to {
+        inset-inline-start: 100%;
+    }
+}
+
+@keyframes login-shell-enter {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.992);
+        filter: blur(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+    }
+}
+
+@keyframes login-panel-soft {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .page-shell {
     height: var(--viewport-height);
     min-height: 0;
@@ -262,9 +320,33 @@ button {
 }
 
 .auth-hero h1 {
-    color: var(--telegram-strong);
-    font-size: 2.3rem;
-    letter-spacing: -0.04em;
+    position: relative;
+    color: #1f5f93;
+    width: fit-content;
+    margin-inline: auto;
+    white-space: nowrap;
+    font-family: "SF Pro Display", "Inter", "Segoe UI", Arial, sans-serif;
+    font-size: 2.18rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    line-height: 1.1;
+    direction: ltr;
+    text-shadow: none;
+    animation:
+        auth-logo-type 1.28s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s both;
+}
+
+.auth-hero h1::after {
+    content: "";
+    position: absolute;
+    inset-block: 0.16em 0.12em;
+    inset-inline-start: 0;
+    width: 2px;
+    border-radius: 999px;
+    background: rgba(31, 95, 147, 0.66);
+    animation:
+        auth-logo-caret-move 1.28s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s both,
+        auth-logo-caret 0.8s ease-in-out 1.45s 3;
 }
 
 .auth-kicker,
@@ -289,6 +371,11 @@ button {
     gap: 12px;
 }
 
+.auth-form {
+    position: relative;
+    z-index: 2;
+}
+
 .field {
     display: grid;
     gap: 6px;
@@ -311,6 +398,19 @@ button {
     outline: none;
 }
 
+.field input::placeholder,
+.field textarea::placeholder,
+#messageInput::placeholder,
+.quick-room-field-stack input::placeholder {
+    color: rgba(78, 91, 104, 0.42);
+}
+
+.auth-form .field input[type="tel"] {
+    border-color: rgba(27, 77, 62, 0.18);
+    background: rgba(255, 255, 255, 0.68);
+    box-shadow: 0 12px 22px rgba(23, 53, 77, 0.12);
+}
+
 .field input:focus,
 .field textarea:focus,
 #messageInput:focus {
@@ -323,7 +423,6 @@ button {
     justify-content: space-between;
     gap: 10px;
     flex-wrap: wrap;
-    order: 3;
 }
 
 .auth-link-button {
@@ -339,8 +438,22 @@ button {
     text-decoration: underline;
 }
 
-#loginSubmitButton {
-    order: 4;
+.guest-entry-button {
+    position: relative;
+    z-index: 1;
+    min-height: 46px;
+    border: 1px solid rgba(27, 77, 62, 0.22);
+    border-radius: 16px;
+    background: #ffffff;
+    color: var(--telegram-strong);
+    font-weight: 800;
+    transform: translateY(-2px) scale(1.015);
+    box-shadow: var(--shadow-soft);
+}
+
+.guest-entry-button:hover {
+    transform: none;
+    box-shadow: var(--shadow-inset);
 }
 
 .auth-tab,
@@ -348,6 +461,7 @@ button {
 .secondary-button,
 .ghost-button,
 .file-button,
+.guest-entry-button,
 .header-plus,
 .icon-button {
     display: inline-flex;
@@ -448,6 +562,45 @@ button {
     color: var(--danger);
 }
 
+.auth-toast {
+    position: fixed;
+    z-index: 1200;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--telegram-strong);
+    font-size: 0.82rem;
+    font-weight: 700;
+    box-shadow: 0 12px 28px rgba(23, 53, 77, 0.16);
+    animation: toast-in 0.22s ease both;
+}
+
+.auth-toast.is-leaving {
+    animation: toast-out 0.22s ease both;
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 8px) scale(0.96);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0) scale(1);
+    }
+}
+
+@keyframes toast-out {
+    to {
+        opacity: 0;
+        transform: translate(-50%, 8px) scale(0.96);
+    }
+}
+
 .app-screen {
     width: min(100%, 1080px);
     margin: 0 auto;
@@ -456,6 +609,19 @@ button {
     gap: 28px;
     min-height: 0;
     animation: slide-fade-up 0.5s var(--ease-out-spring) both;
+}
+
+.app-screen.is-login-enter {
+    animation: login-shell-enter 0.86s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.app-screen.is-login-enter .sidebar,
+.app-screen.is-login-enter .workspace {
+    animation: login-panel-soft 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.app-screen.is-login-enter .workspace {
+    animation-delay: 0.12s;
 }
 
 .sidebar {
@@ -546,6 +712,7 @@ button {
 }
 
 .join-button,
+.search-button,
 .add-chat-button {
     color: var(--muted);
     background: #fff;
@@ -706,13 +873,6 @@ button {
 
 .quick-room-form .icon-button.is-disabled {
     opacity: 0.58;
-}
-
-.quick-room-form .search-button {
-    color: #5f6974;
-    background: transparent;
-    outline: 1.5px solid rgba(124, 135, 147, 0.26);
-    box-shadow: none;
 }
 
 .quick-room-form .search-button.is-active {
@@ -915,6 +1075,9 @@ button {
     background: transparent;
     color: var(--text);
     text-align: right;
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+    user-select: none;
     transition:
         transform var(--motion-med) var(--ease-out-spring),
         background var(--motion-fast) ease,
@@ -922,14 +1085,21 @@ button {
         outline-color var(--motion-fast) ease;
 }
 
+.recent-room:focus,
+.recent-room:focus-visible {
+    outline: none;
+    background: transparent;
+    box-shadow: none;
+}
+
 .recent-room:hover,
-.recent-room.is-active,
 .recent-room.is-selected {
     background: rgba(255, 255, 255, 0.48);
     box-shadow: var(--shadow-inset);
 }
 
 .recent-room.is-active {
+    background: transparent;
     box-shadow: none;
 }
 
@@ -938,7 +1108,9 @@ button {
 }
 
 .recent-room:active {
-    transform: translateY(1px) scale(0.985);
+    background: transparent;
+    box-shadow: none;
+    transform: none;
 }
 
 .recent-room.is-selected {
@@ -1338,10 +1510,27 @@ button {
     box-shadow: 8px 8px 20px rgba(132, 148, 160, 0.14), -8px -8px 20px rgba(255, 255, 255, 0.58);
     direction: rtl;
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+    user-select: none;
     transition:
         transform var(--motion-med) var(--ease-out-spring),
         box-shadow var(--motion-fast) ease,
         background var(--motion-fast) ease;
+}
+
+.message:focus,
+.message:focus-visible,
+.message:active {
+    outline: none;
+    background: var(--bubble-other);
+    box-shadow: 8px 8px 20px rgba(132, 148, 160, 0.14), -8px -8px 20px rgba(255, 255, 255, 0.58);
+}
+
+.message.is-own:focus,
+.message.is-own:focus-visible,
+.message.is-own:active {
+    background: var(--bubble-own);
 }
 
 .message__select-indicator {
@@ -1349,25 +1538,16 @@ button {
 }
 
 .message.is-selected {
-    background: rgba(224, 242, 255, 0.92);
-    box-shadow: 8px 8px 20px rgba(132, 148, 160, 0.14);
+    background: var(--bubble-other);
+    box-shadow: 8px 8px 20px rgba(132, 148, 160, 0.14), -8px -8px 20px rgba(255, 255, 255, 0.58);
 }
 
 .message.is-own.is-selected {
-    background: rgba(224, 242, 255, 0.96);
+    background: var(--bubble-own);
 }
 
 .message.is-selected::after {
-    content: "";
-    position: absolute;
-    z-index: -1;
-    inset-block: -5px;
-    left: 50%;
-    width: 100vw;
-    transform: translateX(-50%);
-    border-radius: 18px;
-    background: rgba(85, 174, 247, 0.1);
-    pointer-events: none;
+    content: none;
 }
 
 .message--photo.is-selected,
@@ -1379,7 +1559,7 @@ button {
 .message--photo.is-selected .attachment-photo,
 .message--photo.is-selected video,
 .message--photo.is-selected audio {
-    box-shadow: 0 0 0 3px rgba(85, 174, 247, 0.36), 0 10px 24px rgba(38, 48, 58, 0.16);
+    box-shadow: 0 10px 24px rgba(38, 48, 58, 0.16);
 }
 
 .message.is-own {
@@ -2151,6 +2331,8 @@ button {
 }
 
 #messageMenuDialog,
+#accountMenuDialog,
+#roomMenuDialog,
 #roomContextMenuDialog,
 #attachmentMenuDialog {
     position: fixed;
@@ -2166,6 +2348,8 @@ button {
     animation: slide-fade-up 0.22s ease both;
 }
 
+#accountMenuDialog::backdrop,
+#roomMenuDialog::backdrop,
 #messageMenuDialog::backdrop,
 #roomContextMenuDialog::backdrop,
 #attachmentMenuDialog::backdrop {
@@ -2173,6 +2357,8 @@ button {
     backdrop-filter: none;
 }
 
+#accountMenuDialog .menu-card,
+#roomMenuDialog .menu-card,
 #messageMenuDialog .menu-card,
 #roomContextMenuDialog .menu-card,
 #attachmentMenuDialog .menu-card {
@@ -2183,12 +2369,16 @@ button {
     border-radius: 12px;
 }
 
+#accountMenuDialog .menu-card__head,
+#roomMenuDialog .menu-card__head,
 #messageMenuDialog .menu-card__head,
 #roomContextMenuDialog .menu-card__head,
 #attachmentMenuDialog .menu-card__head {
     display: none;
 }
 
+#accountMenuDialog .menu-item,
+#roomMenuDialog .menu-item,
 #messageMenuDialog .menu-item,
 #roomContextMenuDialog .menu-item,
 #attachmentMenuDialog .menu-item {
@@ -2203,6 +2393,8 @@ button {
     background: rgba(255, 255, 255, 0.54);
 }
 
+#accountMenuDialog .menu-icon,
+#roomMenuDialog .menu-icon,
 #messageMenuDialog .menu-icon,
 #roomContextMenuDialog .menu-icon,
 #attachmentMenuDialog .menu-icon {
@@ -2210,6 +2402,8 @@ button {
     height: 23px;
 }
 
+#accountMenuDialog .menu-icon::before,
+#roomMenuDialog .menu-icon::before,
 #messageMenuDialog .menu-icon::before,
 #roomContextMenuDialog .menu-icon::before,
 #attachmentMenuDialog .menu-icon::before {
@@ -2471,7 +2665,8 @@ button {
 }
 
 .join-button {
-    --icon: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='black' d='M4 4h9v2.5H6.5v11H13V20H4V4Zm11.7 4.3 4 4-4 4-1.77-1.77 1-1.03H9v-2.5h5.93l-1-1.03L15.7 8.3Z'/%3E%3C/svg%3E");
+    --icon: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 7.5h14v9H5z'/%3E%3Cpath d='M8.2 10.2h.05M11.9 10.2h.05M15.6 10.2h.05M8.2 13.8h.05M11.9 13.8h.05M15.6 13.8h.05'/%3E%3Cpath d='M19 12h2.4m-4.1-2.1L19.4 12l-2.1 2.1'/%3E%3C/g%3E%3C/svg%3E");
+    --icon-size: 23px;
 }
 
 .add-chat-button,
@@ -2526,6 +2721,7 @@ button {
 
 .logout-icon {
     --icon: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='black' d='M4 4h8v2.5H6.5v11H12V20H4V4Zm12.3 4.3 4 4-4 4-1.77-1.77 1-1.03H10v-2.5h5.53l-1-1.03L16.3 8.3Z'/%3E%3C/svg%3E");
+    color: var(--danger);
 }
 
 .link-icon {

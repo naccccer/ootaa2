@@ -25,12 +25,12 @@ class SmsIrService
         }
 
         $payload = [
-            'mobile' => MobileNumber::toDisplay($mobileNormalized),
-            'templateId' => $templateId,
-            'parameters' => [
+            'Mobile' => MobileNumber::toDisplay($mobileNormalized),
+            'TemplateId' => $templateId,
+            'Parameters' => [
                 [
-                    'name' => 'Code',
-                    'value' => $code,
+                    'Name' => 'Code',
+                    'Value' => $code,
                 ],
             ],
         ];
@@ -45,10 +45,12 @@ class SmsIrService
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            CURLOPT_PROXY => '',
+            CURLOPT_NOPROXY => '*',
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
-                'Accept: text/plain',
-                'x-api-key: ' . $apiKey,
+                'Accept: application/json',
+                'X-API-KEY: ' . $apiKey,
             ],
             CURLOPT_TIMEOUT => 15,
         ]);

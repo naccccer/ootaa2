@@ -42,6 +42,12 @@ try {
         ));
     }
 
+    if ($route === 'auth/request-otp' && $method === 'POST') {
+        JsonResponse::success($auth->requestUnifiedOtp(
+            (string) Request::input('mobile', '')
+        ));
+    }
+
     if ($route === 'auth/login/request-otp' && $method === 'POST') {
         JsonResponse::success($auth->requestLoginOtp(
             (string) Request::input('mobile', '')

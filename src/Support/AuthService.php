@@ -177,6 +177,18 @@ class AuthService
         return OtpService::make()->requestOtp($mobileNormalized, 'login');
     }
 
+    public function requestUnifiedOtp(string $mobileInput): array
+    {
+        $mobileNormalized = MobileNumber::normalize($mobileInput);
+        $user = $this->findUserByMobile($mobileNormalized);
+        $data = OtpService::make()->requestOtp($mobileNormalized, 'login');
+
+        return array_merge($data, [
+            'accountExists' => $user !== null && $this->isRegistered($user),
+            'mobileDisplay' => MobileNumber::toDisplay($mobileNormalized),
+        ]);
+    }
+
     public function verifyLoginOtp(string $mobileInput, string $code): array
     {
         $mobileNormalized = MobileNumber::normalize($mobileInput);
