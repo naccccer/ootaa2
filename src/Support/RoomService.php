@@ -525,6 +525,16 @@ class RoomService
     private function presenceForRoom(int $roomId): array
     {
         $cutoff = date('Y-m-d H:i:s.u', time() - (int) app_config('app.presence_window_seconds', 120));
+        $countStatement = $this->pdo->prepare(
+            'SELECT COUNT(*) AS participant_count
+             FROM participants
+             WHERE room_id = :room_id'
+        );
+        $countStatement->execute([
+            'room_id' => $roomId,
+        ]);
+        $participantCount = (int) $countStatement->fetchColumn();
+
         $statement = $this->pdo->prepare(
             'SELECT display_name, mobile_display, last_seen_at
              FROM participants
@@ -540,6 +550,7 @@ class RoomService
 
         return [
             'onlineCount' => count($participants),
+            'totalCount' => $participantCount,
             'participants' => array_map(static function (array $participant): array {
                 return [
                     'displayName' => (string) $participant['display_name'],

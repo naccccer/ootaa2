@@ -16,8 +16,11 @@
         replyingMessageId: null,
         contextMessageId: null,
         contextRoomCode: null,
+        contextAttachmentId: null,
         selectingRooms: false,
         selectedRoomCodes: new Set(),
+        selectingMessages: false,
+        selectedMessageIds: new Set(),
         roomDialogMode: "join",
         selectedFiles: [],
         longPressTimer: null,
@@ -85,13 +88,28 @@
         presenceList: document.getElementById("presenceList"),
         chatStatus: document.getElementById("chatStatus"),
         messagesList: document.getElementById("messagesList"),
+        messageSelectionBar: document.getElementById("messageSelectionBar"),
+        messageSelectionCount: document.getElementById("messageSelectionCount"),
+        copySelectedMessagesButton: document.getElementById("copySelectedMessagesButton"),
+        forwardSelectedMessagesButton: document.getElementById("forwardSelectedMessagesButton"),
+        deleteSelectedMessagesButton: document.getElementById("deleteSelectedMessagesButton"),
+        cancelMessageSelectionButton: document.getElementById("cancelMessageSelectionButton"),
         messageMenuDialog: document.getElementById("messageMenuDialog"),
         closeMessageMenuButton: document.getElementById("closeMessageMenuButton"),
         messageReplyButton: document.getElementById("messageReplyButton"),
+        messageSelectButton: document.getElementById("messageSelectButton"),
         messageCopyButton: document.getElementById("messageCopyButton"),
         messageForwardButton: document.getElementById("messageForwardButton"),
         messageEditButton: document.getElementById("messageEditButton"),
         messageDeleteButton: document.getElementById("messageDeleteButton"),
+        attachmentMenuDialog: document.getElementById("attachmentMenuDialog"),
+        closeAttachmentMenuButton: document.getElementById("closeAttachmentMenuButton"),
+        attachmentOpenButton: document.getElementById("attachmentOpenButton"),
+        attachmentDownloadButton: document.getElementById("attachmentDownloadButton"),
+        attachmentCopyButton: document.getElementById("attachmentCopyButton"),
+        attachmentReplyButton: document.getElementById("attachmentReplyButton"),
+        attachmentSelectButton: document.getElementById("attachmentSelectButton"),
+        attachmentDeleteButton: document.getElementById("attachmentDeleteButton"),
         roomContextMenuDialog: document.getElementById("roomContextMenuDialog"),
         closeRoomContextMenuButton: document.getElementById("closeRoomContextMenuButton"),
         roomContextSelectButton: document.getElementById("roomContextSelectButton"),
@@ -595,6 +613,128 @@
         setStatus(dom.chatStatus, "", false);
     }
 
+    function enterMessageSelectionMode(messageId) {
+        const numericId = Number(messageId || 0);
+
+        if (!numericId || !state.messages.has(numericId)) {
+            return;
+        }
+
+        state.selectingMessages = true;
+        state.selectedMessageIds.add(numericId);
+        closeMessageMenu();
+        closeAttachmentMenu();
+        renderMessages({ scroll: "none" });
+        renderMessageSelectionState();
+    }
+
+    function exitMessageSelectionMode() {
+        state.selectingMessages = false;
+        state.selectedMessageIds.clear();
+        renderMessages({ scroll: "none" });
+        renderMessageSelectionState();
+    }
+
+    function toggleMessageSelection(messageId) {
+        const numericId = Number(messageId || 0);
+
+        if (!numericId || !state.messages.has(numericId)) {
+            return;
+        }
+
+        if (state.selectedMessageIds.has(numericId)) {
+            state.selectedMessageIds.delete(numericId);
+        } else {
+            state.selectedMessageIds.add(numericId);
+        }
+
+        state.selectingMessages = state.selectedMessageIds.size > 0;
+        renderMessages({ scroll: "none" });
+        renderMessageSelectionState();
+    }
+
+    function selectedMessages() {
+        return Array.from(state.selectedMessageIds)
+            .map((messageId) => state.messages.get(messageId))
+            .filter((message) => message && !message.isDeleted)
+            .sort((left, right) => left.id - right.id);
+    }
+
+    function selectedMessagesText() {
+        return selectedMessages()
+            .map((message) => message.bodyText || ((message.attachments || []).length > 0 ? "فایل" : ""))
+            .filter(Boolean)
+            .join("\n");
+    }
+
+    function renderMessageSelectionState() {
+        const messages = selectedMessages();
+        const count = messages.length;
+        state.selectingMessages = count > 0;
+
+        dom.messageSelectionBar.hidden = !state.selectingMessages;
+        dom.composerForm.classList.toggle("is-selection-active", state.selectingMessages);
+        dom.messageSelectionCount.textContent = `${new Intl.NumberFormat("fa-IR").format(count)} انتخاب`;
+        dom.copySelectedMessagesButton.disabled = count === 0 || selectedMessagesText() === "";
+        dom.forwardSelectedMessagesButton.disabled = count === 0 || selectedMessagesText() === "";
+        dom.deleteSelectedMessagesButton.disabled = count === 0 || messages.every((message) => !message.isOwn);
+    }
+
+    async function copySelectedMessages() {
+        const text = selectedMessagesText();
+
+        if (!text) {
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(text);
+            setStatus(dom.chatStatus, "پیام‌های انتخاب‌شده کپی شد.", false);
+        } catch (error) {
+            setStatus(dom.chatStatus, "کپی انجام نشد.", true);
+        }
+    }
+
+    function forwardSelectedMessages() {
+        const text = selectedMessagesText();
+
+        if (!text) {
+            return;
+        }
+
+        dom.messageInput.value = text;
+        exitMessageSelectionMode();
+        renderComposerState();
+        dom.messageInput.focus();
+    }
+
+    async function deleteSelectedMessages() {
+        const messages = selectedMessages().filter((message) => message.isOwn);
+
+        if (messages.length === 0) {
+            return;
+        }
+
+        const confirmed = await askConfirm({
+            title: "حذف پیام‌ها",
+            message: "پیام‌های انتخاب‌شده حذف می‌شوند.",
+            acceptText: "حذف"
+        });
+
+        if (!confirmed) {
+            return;
+        }
+
+        for (const message of messages) {
+            await deleteMessage(message.id, { render: false });
+        }
+
+        exitMessageSelectionMode();
+        renderRoomMeta();
+        renderPresence();
+        renderMessages({ scroll: "preserve" });
+    }
+
     function clearSelectedFiles() {
         state.selectedFiles.forEach((entry) => {
             if (entry.previewUrl) {
@@ -960,21 +1100,53 @@
         }
     }
 
-    function renderMessages() {
+    function scrollMessagesToBottom() {
+        const scrollToEnd = () => {
+            dom.messagesList.scrollTop = Math.max(0, dom.messagesList.scrollHeight - dom.messagesList.clientHeight);
+        };
+
+        scrollToEnd();
+        window.requestAnimationFrame(() => {
+            scrollToEnd();
+            window.requestAnimationFrame(scrollToEnd);
+        });
+        window.setTimeout(scrollToEnd, 120);
+        window.setTimeout(scrollToEnd, 360);
+    }
+
+    function renderMessages(options = {}) {
+        const scrollMode = options.scroll || "preserve";
+        const previousScrollHeight = dom.messagesList.scrollHeight;
+        const previousScrollTop = dom.messagesList.scrollTop;
+        const wasNearBottom = previousScrollHeight - previousScrollTop - dom.messagesList.clientHeight < 120;
         const messages = Array.from(state.messages.values())
             .filter((message) => !message.isDeleted)
             .sort((left, right) => left.id - right.id);
 
+        state.selectedMessageIds.forEach((messageId) => {
+            const message = state.messages.get(messageId);
+
+            if (!message || message.isDeleted) {
+                state.selectedMessageIds.delete(messageId);
+            }
+        });
+
         if (messages.length === 0) {
             dom.messagesList.innerHTML = '<div class="message message--empty"><div class="message__body">اولین پیام را بنویسید.</div></div>';
+            dom.messagesList.scrollTop = 0;
+            renderMessageSelectionState();
             return;
         }
 
         let lastDateKey = "";
+        let previousSenderKey = "";
+        const participantCount = Number(state.presence?.totalCount || state.presence?.participants?.length || 0);
+        const showSenderNames = participantCount > 2;
 
         dom.messagesList.innerHTML = messages.map((message) => {
             const messageDate = message.createdAt || message.updatedAt;
             const dateKey = formatMessageDateKey(messageDate);
+            const hasDateSeparator = Boolean(dateKey && dateKey !== lastDateKey);
             const dateSeparator = dateKey && dateKey !== lastDateKey
                 ? `<div class="message-date-separator"><span>${escapeHtml(formatMessageDate(messageDate))}</span></div>`
                 : "";
@@ -983,14 +1155,19 @@
                 lastDateKey = dateKey;
             }
 
+            const senderKey = message.senderMobile || message.senderName || String(message.id);
+            const shouldShowSenderName = showSenderNames && (hasDateSeparator || senderKey !== previousSenderKey);
+            previousSenderKey = senderKey;
+
             const messageAttachments = message.attachments || [];
             const isPhotoMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "image");
             const isFileMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "download");
             const attachments = renderAttachments(messageAttachments);
             const isEntering = !state.renderedMessageIds.has(message.id);
+            const isSelected = state.selectedMessageIds.has(message.id);
             const replyMarkup = message.replyTo && !message.replyTo.isDeleted ? `
                 <div class="message__reply">
-                    <div class="message__reply-meta">${escapeHtml(message.replyTo.senderName)} • ${escapeHtml(message.replyTo.senderMobile || "")}</div>
+                    <div class="message__reply-meta">${escapeHtml(message.replyTo.senderName)}</div>
                     <div>${escapeHtml(message.replyTo.bodyText || "فایل")}</div>
                 </div>
             ` : "";
@@ -998,12 +1175,15 @@
             const messageContent = isFileMessage ? `${attachments}${bodyText}` : `${bodyText}${attachments}`;
             return `
                 ${dateSeparator}
-                <article class="message${message.isOwn ? " is-own" : ""}${isPhotoMessage ? " message--photo" : ""}${isFileMessage ? " message--file" : ""}${isEntering ? " is-entering" : ""}" data-message-id="${message.id}" tabindex="0">
-                    <div class="message__head">
-                        <div class="message__author">
-                            <strong>${escapeHtml(message.senderName)}</strong>
+                <article class="message${message.isOwn ? " is-own" : ""}${isPhotoMessage ? " message--photo" : ""}${isFileMessage ? " message--file" : ""}${isSelected ? " is-selected" : ""}${isEntering ? " is-entering" : ""}" data-message-id="${message.id}" tabindex="0" aria-selected="${isSelected ? "true" : "false"}">
+                    <span class="message__select-indicator" aria-hidden="true"></span>
+                    ${shouldShowSenderName ? `
+                        <div class="message__head">
+                            <div class="message__author">
+                                <strong>${escapeHtml(message.senderName)}</strong>
+                            </div>
                         </div>
-                    </div>
+                    ` : ""}
                     ${replyMarkup}
                     ${messageContent}
                     <div class="message__meta">
@@ -1015,7 +1195,28 @@
         }).join("");
 
         messages.forEach((message) => state.renderedMessageIds.add(message.id));
-        dom.messagesList.scrollTop = dom.messagesList.scrollHeight;
+        renderMessageSelectionState();
+
+        if (scrollMode === "bottom" || (scrollMode === "auto" && wasNearBottom)) {
+            scrollMessagesToBottom();
+            dom.messagesList.querySelectorAll("img, video").forEach((media) => {
+                if (media.complete || media.readyState >= 1) {
+                    return;
+                }
+
+                media.addEventListener("load", scrollMessagesToBottom, { once: true });
+                media.addEventListener("loadedmetadata", scrollMessagesToBottom, { once: true });
+            });
+            return;
+        }
+
+        if (scrollMode === "none") {
+            dom.messagesList.scrollTop = previousScrollTop;
+            return;
+        }
+
+        const heightDelta = dom.messagesList.scrollHeight - previousScrollHeight;
+        dom.messagesList.scrollTop = Math.max(0, previousScrollTop + heightDelta);
     }
 
     function renderAttachments(attachments) {
@@ -1056,19 +1257,19 @@
 
     function renderAttachmentPreview(attachment) {
         if (attachment.previewKind === "image") {
-            return `<a class="attachment-photo" href="${escapeHtml(attachment.url)}" data-photo-url="${escapeHtml(attachment.url)}" data-photo-name="${escapeHtml(attachment.name)}"><img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachment.name)}"></a>`;
+            return `<a class="attachment-photo" href="${escapeHtml(attachment.url)}" data-attachment-id="${escapeHtml(attachment.id)}" data-photo-url="${escapeHtml(attachment.url)}" data-photo-name="${escapeHtml(attachment.name)}"><img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachment.name)}"></a>`;
         }
 
         if (attachment.previewKind === "video") {
-            return `<video controls preload="metadata" src="${escapeHtml(attachment.url)}"></video>`;
+            return `<video controls preload="metadata" src="${escapeHtml(attachment.url)}" data-attachment-id="${escapeHtml(attachment.id)}"></video>`;
         }
 
         if (attachment.previewKind === "audio") {
-            return `<audio controls preload="metadata" src="${escapeHtml(attachment.url)}"></audio>`;
+            return `<audio controls preload="metadata" src="${escapeHtml(attachment.url)}" data-attachment-id="${escapeHtml(attachment.id)}"></audio>`;
         }
 
         return `
-            <a class="attachment-file" href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer">
+            <a class="attachment-file" href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer" data-attachment-id="${escapeHtml(attachment.id)}">
                 <span class="attachment-file__icon" aria-hidden="true"></span>
                 <span class="attachment-file__meta">
                     <strong>${escapeHtml(attachment.name)}</strong>
@@ -1145,7 +1346,7 @@
         }
 
         renderShell();
-        renderMessages();
+        renderMessages({ scroll: "bottom" });
     }
 
     function applySyncData(data) {
@@ -1163,7 +1364,7 @@
         renderPresence();
 
         if (messagesChanged) {
-            renderMessages();
+            renderMessages({ scroll: "auto" });
         }
     }
 
@@ -1178,9 +1379,12 @@
         state.editingMessageId = null;
         state.replyingMessageId = null;
         state.contextMessageId = null;
+        state.contextAttachmentId = null;
         state.contextRoomCode = null;
         state.selectingRooms = false;
         state.selectedRoomCodes.clear();
+        state.selectingMessages = false;
+        state.selectedMessageIds.clear();
         clearSelectedFiles();
         renderShell();
         setStatus(dom.authStatus, "نشست شما منقضی شده است. دوباره وارد شوید.", true);
@@ -1270,11 +1474,13 @@
         state.syncCursor = null;
         state.editingMessageId = null;
         state.replyingMessageId = null;
+        state.selectingMessages = false;
+        state.selectedMessageIds.clear();
         dom.messageInput.value = "";
         clearSelectedFiles();
         clearActiveRoomCode();
         renderShell();
-        renderMessages();
+        renderMessages({ scroll: "bottom" });
         setStatus(dom.chatStatus, "", false);
     }
 
@@ -1462,7 +1668,7 @@
                 dom.messageInput.value = "";
                 renderRoomMeta();
                 renderPresence();
-                renderMessages();
+                renderMessages({ scroll: "preserve" });
             } else {
                 const formData = new FormData();
                 formData.append("roomCode", state.room.code);
@@ -1495,7 +1701,7 @@
                 exitReplyMode();
                 renderRoomMeta();
                 renderPresence();
-                renderMessages();
+                renderMessages({ scroll: "bottom" });
             }
         } catch (error) {
             setStatus(dom.chatStatus, error.message, true);
@@ -1543,7 +1749,7 @@
         renderComposerState();
     }
 
-    async function deleteMessage(messageId) {
+    async function deleteMessage(messageId, options = {}) {
         setStatus(dom.chatStatus, "", false);
 
         try {
@@ -1554,16 +1760,105 @@
             state.messages.set(data.message.id, data.message);
             state.room = data.room || state.room;
             state.presence = data.presence || state.presence;
-            renderRoomMeta();
-            renderPresence();
-            renderMessages();
+            state.selectedMessageIds.delete(messageId);
+
+            if (options.render !== false) {
+                renderRoomMeta();
+                renderPresence();
+                renderMessages({ scroll: "preserve" });
+            }
         } catch (error) {
             setStatus(dom.chatStatus, error.message, true);
         }
     }
 
+    function openContextAttachment() {
+        const attachment = getContextAttachment();
+
+        if (!attachment) {
+            closeAttachmentMenu();
+            return;
+        }
+
+        closeAttachmentMenu();
+
+        if (attachment.previewKind === "image") {
+            openPhotoViewer(attachment.url, attachment.name);
+            return;
+        }
+
+        window.open(attachment.url, "_blank", "noopener,noreferrer");
+    }
+
+    function downloadContextAttachment() {
+        const attachment = getContextAttachment();
+
+        if (!attachment) {
+            closeAttachmentMenu();
+            return;
+        }
+
+        closeAttachmentMenu();
+        window.open(attachment.url, "_blank", "noopener,noreferrer");
+    }
+
+    async function copyContextAttachmentLink() {
+        const attachment = getContextAttachment();
+
+        if (!attachment) {
+            closeAttachmentMenu();
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(new URL(attachment.url, window.location.href).href);
+            setStatus(dom.chatStatus, "لینک فایل کپی شد.", false);
+        } catch (error) {
+            setStatus(dom.chatStatus, "کپی خودکار انجام نشد.", true);
+        } finally {
+            closeAttachmentMenu();
+        }
+    }
+
+    function replyToContextAttachment() {
+        const message = getContextMessage();
+        closeAttachmentMenu();
+
+        if (message) {
+            enterReplyMode(message.id);
+        }
+    }
+
+    function selectContextAttachmentMessage() {
+        const message = getContextMessage();
+        closeAttachmentMenu();
+
+        if (message) {
+            enterMessageSelectionMode(message.id);
+        }
+    }
+
+    function deleteContextAttachmentMessage() {
+        const message = getContextMessage();
+        closeAttachmentMenu();
+
+        if (message?.isOwn) {
+            deleteMessage(message.id);
+        }
+    }
+
     function getContextMessage() {
         return state.contextMessageId ? state.messages.get(state.contextMessageId) : null;
+    }
+
+    function getContextAttachment() {
+        const message = getContextMessage();
+
+        if (!message || !state.contextAttachmentId) {
+            return null;
+        }
+
+        return (message.attachments || []).find((attachment) => attachment.id === state.contextAttachmentId) || null;
     }
 
     function positionFloatingMenu(dialog, anchor, boundaryElement) {
@@ -1600,6 +1895,10 @@
         positionFloatingMenu(dom.messageMenuDialog, anchor, dom.messagesList);
     }
 
+    function positionAttachmentMenu(anchor) {
+        positionFloatingMenu(dom.attachmentMenuDialog, anchor, dom.messagesList);
+    }
+
     function messageAnchorFromElement(element) {
         const rect = element.getBoundingClientRect();
         const isOwn = element.classList.contains("is-own");
@@ -1619,8 +1918,11 @@
             return;
         }
 
+        closeAttachmentMenu();
         closeRoomContextMenu();
         state.contextMessageId = messageId;
+        state.contextAttachmentId = null;
+        dom.messageSelectButton.hidden = false;
         dom.messageEditButton.hidden = !message.isOwn;
         dom.messageDeleteButton.hidden = !message.isOwn;
 
@@ -1634,6 +1936,43 @@
     function closeMessageMenu() {
         if (dom.messageMenuDialog.open) {
             closeDialogAnimated(dom.messageMenuDialog);
+        }
+    }
+
+    function selectContextMessage() {
+        const message = getContextMessage();
+        closeMessageMenu();
+
+        if (message) {
+            enterMessageSelectionMode(message.id);
+        }
+    }
+
+    function openAttachmentMenu(messageId, attachmentId, anchor = null) {
+        const message = state.messages.get(messageId);
+        const attachment = (message?.attachments || []).find((item) => item.id === attachmentId);
+
+        if (!message || !attachment || message.isDeleted) {
+            return;
+        }
+
+        closeMessageMenu();
+        closeRoomContextMenu();
+        state.contextMessageId = messageId;
+        state.contextAttachmentId = attachmentId;
+        dom.attachmentOpenButton.querySelector("span:last-child").textContent = attachment.previewKind === "download" ? "باز کردن" : "نمایش";
+        dom.attachmentDeleteButton.hidden = !message.isOwn;
+
+        if (!dom.attachmentMenuDialog.open) {
+            dom.attachmentMenuDialog.show();
+        }
+
+        positionAttachmentMenu(anchor);
+    }
+
+    function closeAttachmentMenu() {
+        if (dom.attachmentMenuDialog.open) {
+            closeDialogAnimated(dom.attachmentMenuDialog);
         }
     }
 
@@ -1660,6 +1999,7 @@
         }
 
         closeMessageMenu();
+        closeAttachmentMenu();
         state.contextRoomCode = roomCode;
 
         if (!dom.roomContextMenuDialog.open) {
@@ -1901,6 +2241,15 @@
         dom.openRoomMenuButton.addEventListener("click", openRoomMenu);
         dom.closeRoomMenuButton.addEventListener("click", closeRoomMenu);
         dom.closeMessageMenuButton.addEventListener("click", closeMessageMenu);
+        dom.closeAttachmentMenuButton.addEventListener("click", closeAttachmentMenu);
+        dom.attachmentOpenButton.addEventListener("click", openContextAttachment);
+        dom.attachmentDownloadButton.addEventListener("click", downloadContextAttachment);
+        dom.attachmentCopyButton.addEventListener("click", () => {
+            copyContextAttachmentLink();
+        });
+        dom.attachmentReplyButton.addEventListener("click", replyToContextAttachment);
+        dom.attachmentSelectButton.addEventListener("click", selectContextAttachmentMessage);
+        dom.attachmentDeleteButton.addEventListener("click", deleteContextAttachmentMessage);
         dom.closeRoomContextMenuButton.addEventListener("click", closeRoomContextMenu);
         dom.roomContextSelectButton.addEventListener("click", selectContextRoom);
         dom.roomContextRenameButton.addEventListener("click", () => {
@@ -1919,6 +2268,16 @@
             });
         });
         dom.cancelRoomSelectionButton.addEventListener("click", exitRoomSelectionMode);
+        dom.cancelMessageSelectionButton.addEventListener("click", exitMessageSelectionMode);
+        dom.copySelectedMessagesButton.addEventListener("click", () => {
+            copySelectedMessages();
+        });
+        dom.forwardSelectedMessagesButton.addEventListener("click", forwardSelectedMessages);
+        dom.deleteSelectedMessagesButton.addEventListener("click", () => {
+            deleteSelectedMessages().catch((error) => {
+                setStatus(dom.chatStatus, error.message, true);
+            });
+        });
         dom.deleteSelectedRoomsButton.addEventListener("click", () => {
             deleteSelectedRooms().catch((error) => {
                 setStatus(dom.chatStatus, error.message, true);
@@ -1932,6 +2291,7 @@
                 enterReplyMode(message.id);
             }
         });
+        dom.messageSelectButton.addEventListener("click", selectContextMessage);
         dom.messageCopyButton.addEventListener("click", copyMessageText);
         dom.messageForwardButton.addEventListener("click", forwardMessageText);
         dom.messageEditButton.addEventListener("click", () => {
@@ -2257,6 +2617,14 @@
             closePhotoViewer();
         });
         dom.messagesList.addEventListener("click", (event) => {
+            const message = event.target.closest("[data-message-id]");
+
+            if (state.selectingMessages && message) {
+                event.preventDefault();
+                toggleMessageSelection(Number(message.dataset.messageId || 0));
+                return;
+            }
+
             const photoLink = event.target.closest(".attachment-photo");
 
             if (!photoLink) {
@@ -2268,7 +2636,25 @@
         });
 
         dom.messagesList.addEventListener("contextmenu", (event) => {
+            const attachmentElement = event.target.closest("[data-attachment-id]");
             const message = event.target.closest("[data-message-id]");
+
+            if (state.selectingMessages && message) {
+                event.preventDefault();
+                toggleMessageSelection(Number(message.dataset.messageId || 0));
+                return;
+            }
+
+            if (attachmentElement && message) {
+                event.preventDefault();
+                openAttachmentMenu(Number(message.dataset.messageId || 0), attachmentElement.dataset.attachmentId || "", {
+                    x: event.clientX,
+                    y: event.clientY,
+                    messageRect: attachmentElement.getBoundingClientRect(),
+                    preferredSide: message.classList.contains("is-own") ? "left" : "right"
+                });
+                return;
+            }
 
             if (!message || event.target.closest("a, button, input, video, audio")) {
                 return;
@@ -2284,11 +2670,12 @@
         });
 
         dom.messagesList.addEventListener("pointerdown", (event) => {
-            if (event.pointerType === "mouse" || event.target.closest("a, button, input, video, audio")) {
+            if (event.pointerType === "mouse") {
                 return;
             }
 
             const message = event.target.closest("[data-message-id]");
+            const attachmentElement = event.target.closest("[data-attachment-id]");
 
             if (!message) {
                 return;
@@ -2296,6 +2683,25 @@
 
             window.clearTimeout(state.longPressTimer);
             state.longPressTimer = window.setTimeout(() => {
+                if (state.selectingMessages) {
+                    toggleMessageSelection(Number(message.dataset.messageId || 0));
+                    return;
+                }
+
+                if (attachmentElement) {
+                    openAttachmentMenu(Number(message.dataset.messageId || 0), attachmentElement.dataset.attachmentId || "", {
+                        x: event.clientX,
+                        y: event.clientY,
+                        messageRect: attachmentElement.getBoundingClientRect(),
+                        preferredSide: message.classList.contains("is-own") ? "left" : "right"
+                    });
+                    return;
+                }
+
+                if (event.target.closest("a, button, input, video, audio")) {
+                    return;
+                }
+
                 openMessageMenu(Number(message.dataset.messageId || 0), {
                     x: event.clientX,
                     y: event.clientY,
@@ -2366,7 +2772,7 @@
     bindEvents();
     renderAuthMode();
     renderShell();
-    renderMessages();
+    renderMessages({ scroll: "bottom" });
     renderSelectedFiles();
     registerServiceWorker();
     restoreSession();

@@ -131,6 +131,16 @@ $basePath = app_base_path();
 
                     <div id="chatStatus" class="inline-status" hidden></div>
 
+                    <div id="messageSelectionBar" class="message-selection-bar" hidden>
+                        <span id="messageSelectionCount">۰ انتخاب</span>
+                        <div class="message-selection-bar__actions">
+                            <button type="button" id="copySelectedMessagesButton" class="icon-button copy-button" aria-label="کپی انتخاب‌شده‌ها"></button>
+                            <button type="button" id="forwardSelectedMessagesButton" class="icon-button forward-button" aria-label="فوروارد انتخاب‌شده‌ها"></button>
+                            <button type="button" id="deleteSelectedMessagesButton" class="icon-button delete-room-button" aria-label="حذف انتخاب‌شده‌ها"></button>
+                            <button type="button" id="cancelMessageSelectionButton" class="icon-button close-button" aria-label="لغو انتخاب"></button>
+                        </div>
+                    </div>
+
                     <section id="messagesList" class="messages-list"></section>
 
                     <form id="composerForm" class="composer" enctype="multipart/form-data">
@@ -237,6 +247,10 @@ $basePath = app_base_path();
                 <span class="menu-icon reply-icon" aria-hidden="true"></span>
                 <span>پاسخ</span>
             </button>
+            <button type="button" id="messageSelectButton" class="menu-item">
+                <span class="menu-icon select-icon" aria-hidden="true"></span>
+                <span>انتخاب</span>
+            </button>
             <button type="button" id="messageCopyButton" class="menu-item">
                 <span class="menu-icon copy-icon" aria-hidden="true"></span>
                 <span>کپی</span>
@@ -252,6 +266,39 @@ $basePath = app_base_path();
             <button type="button" id="messageDeleteButton" class="menu-item danger-text">
                 <span class="menu-icon delete-icon" aria-hidden="true"></span>
                 <span>حذف</span>
+            </button>
+        </div>
+    </dialog>
+
+    <dialog id="attachmentMenuDialog" class="modal">
+        <div class="menu-card">
+            <div class="menu-card__head">
+                <strong>فایل</strong>
+                <button type="button" id="closeAttachmentMenuButton" class="icon-button close-button" aria-label="بستن"></button>
+            </div>
+            <button type="button" id="attachmentOpenButton" class="menu-item">
+                <span class="menu-icon view-icon" aria-hidden="true"></span>
+                <span>نمایش</span>
+            </button>
+            <button type="button" id="attachmentDownloadButton" class="menu-item">
+                <span class="menu-icon download-icon" aria-hidden="true"></span>
+                <span>دانلود</span>
+            </button>
+            <button type="button" id="attachmentCopyButton" class="menu-item">
+                <span class="menu-icon link-icon" aria-hidden="true"></span>
+                <span>کپی لینک</span>
+            </button>
+            <button type="button" id="attachmentReplyButton" class="menu-item">
+                <span class="menu-icon reply-icon" aria-hidden="true"></span>
+                <span>پاسخ</span>
+            </button>
+            <button type="button" id="attachmentSelectButton" class="menu-item">
+                <span class="menu-icon select-icon" aria-hidden="true"></span>
+                <span>انتخاب</span>
+            </button>
+            <button type="button" id="attachmentDeleteButton" class="menu-item danger-text">
+                <span class="menu-icon delete-icon" aria-hidden="true"></span>
+                <span>حذف پیام</span>
             </button>
         </div>
     </dialog>
