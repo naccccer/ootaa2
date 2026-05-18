@@ -14,9 +14,15 @@
         editingMessageId: null,
         replyingMessageId: null,
         contextMessageId: null,
+        contextRoomCode: null,
+        selectingRooms: false,
+        selectedRoomCodes: new Set(),
         roomDialogMode: "join",
         selectedFiles: [],
         longPressTimer: null,
+        roomLongPressTimer: null,
+        contactSearchTimer: null,
+        roomContextOpenedByPress: false,
         busy: false
     };
 
@@ -49,13 +55,22 @@
         openProfileButton: document.getElementById("openProfileButton"),
         openPasswordButton: document.getElementById("openPasswordButton"),
         logoutButton: document.getElementById("logoutButton"),
+        sidebar: document.querySelector(".sidebar"),
         recentRoomsList: document.getElementById("recentRoomsList"),
-        openCreateRoomButton: document.getElementById("openCreateRoomButton"),
-        openJoinRoomButton: document.getElementById("openJoinRoomButton"),
+        quickRoomForm: document.getElementById("quickRoomForm"),
+        quickRoomCodeInput: document.getElementById("quickRoomCodeInput"),
+        quickJoinRoomButton: document.getElementById("quickJoinRoomButton"),
+        quickCreateRoomButton: document.getElementById("quickCreateRoomButton"),
+        toggleContactSearchButton: document.getElementById("toggleContactSearchButton"),
+        contactSearchPanel: document.getElementById("contactSearchPanel"),
+        contactSearchInput: document.getElementById("contactSearchInput"),
+        contactSearchResults: document.getElementById("contactSearchResults"),
+        roomSelectionBar: document.getElementById("roomSelectionBar"),
+        roomSelectionCount: document.getElementById("roomSelectionCount"),
+        deleteSelectedRoomsButton: document.getElementById("deleteSelectedRoomsButton"),
+        cancelRoomSelectionButton: document.getElementById("cancelRoomSelectionButton"),
         welcomePanel: document.getElementById("welcomePanel"),
         chatPanel: document.getElementById("chatPanel"),
-        welcomeCreateRoomButton: document.getElementById("welcomeCreateRoomButton"),
-        welcomeJoinRoomButton: document.getElementById("welcomeJoinRoomButton"),
         roomTitle: document.getElementById("roomTitle"),
         roomSubtitle: document.getElementById("roomSubtitle"),
         openRoomMenuButton: document.getElementById("openRoomMenuButton"),
@@ -76,6 +91,19 @@
         messageForwardButton: document.getElementById("messageForwardButton"),
         messageEditButton: document.getElementById("messageEditButton"),
         messageDeleteButton: document.getElementById("messageDeleteButton"),
+        roomContextMenuDialog: document.getElementById("roomContextMenuDialog"),
+        closeRoomContextMenuButton: document.getElementById("closeRoomContextMenuButton"),
+        roomContextSelectButton: document.getElementById("roomContextSelectButton"),
+        roomContextRenameButton: document.getElementById("roomContextRenameButton"),
+        roomContextCopyButton: document.getElementById("roomContextCopyButton"),
+        roomContextDeleteButton: document.getElementById("roomContextDeleteButton"),
+        confirmDialog: document.getElementById("confirmDialog"),
+        confirmDialogForm: document.getElementById("confirmDialogForm"),
+        confirmDialogTitle: document.getElementById("confirmDialogTitle"),
+        confirmDialogMessage: document.getElementById("confirmDialogMessage"),
+        acceptConfirmDialogButton: document.getElementById("acceptConfirmDialogButton"),
+        rejectConfirmDialogButton: document.getElementById("rejectConfirmDialogButton"),
+        cancelConfirmDialogButton: document.getElementById("cancelConfirmDialogButton"),
         composerForm: document.getElementById("composerForm"),
         replyBanner: document.getElementById("replyBanner"),
         replyBannerText: document.getElementById("replyBannerText"),
@@ -151,14 +179,24 @@
             .replaceAll("'", "&#039;");
     }
 
-    function formatDate(value) {
+    function parseDate(value) {
         if (!value) {
-            return "-";
+            return null;
         }
 
         const date = new Date(String(value).replace(" ", "T"));
 
         if (Number.isNaN(date.getTime())) {
+            return null;
+        }
+
+        return date;
+    }
+
+    function formatDate(value) {
+        const date = parseDate(value);
+
+        if (!date) {
             return "-";
         }
 
@@ -167,6 +205,47 @@
             minute: "2-digit",
             month: "short",
             day: "numeric"
+        }).format(date);
+    }
+
+    function formatMessageDate(value) {
+        const date = parseDate(value);
+
+        if (!date) {
+            return "";
+        }
+
+        return new Intl.DateTimeFormat("fa-IR", {
+            weekday: "long",
+            month: "long",
+            day: "numeric"
+        }).format(date);
+    }
+
+    function formatMessageDateKey(value) {
+        const date = parseDate(value);
+
+        if (!date) {
+            return "";
+        }
+
+        return new Intl.DateTimeFormat("en-CA", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit"
+        }).format(date);
+    }
+
+    function formatMessageTime(value) {
+        const date = parseDate(value);
+
+        if (!date) {
+            return "";
+        }
+
+        return new Intl.DateTimeFormat("fa-IR", {
+            hour: "2-digit",
+            minute: "2-digit"
         }).format(date);
     }
 
@@ -278,13 +357,24 @@
         }
 
         const rooms = getRecentRooms();
+        const existingRoom = rooms.find((item) => item.roomCode === room.code);
+
+        if (existingRoom) {
+            setRecentRooms(rooms.map((item) => (
+                item.roomCode === room.code
+                    ? { ...item, roomName: room.name || item.roomName || "" }
+                    : item
+            )));
+            return;
+        }
+
         const next = [
             {
                 roomCode: room.code,
                 roomName: room.name || "",
                 visitedAt: new Date().toISOString()
             },
-            ...rooms.filter((item) => item.roomCode !== room.code)
+            ...rooms
         ].slice(0, 15);
 
         setRecentRooms(next);
@@ -300,6 +390,126 @@
                 ? { ...item, roomName: room.name || "" }
                 : item
         )));
+    }
+
+    function findRememberedRoom(roomCode) {
+        return getRecentRooms().find((room) => room.roomCode === roomCode) || null;
+    }
+
+    function removeRememberedRoom(roomCode) {
+        if (!state.user || !roomCode) {
+            return;
+        }
+
+        setRecentRooms(getRecentRooms().filter((room) => room.roomCode !== roomCode));
+    }
+
+    function askConfirm({ title = "تایید", message = "", acceptText = "تایید" } = {}) {
+        return new Promise((resolve) => {
+            let settled = false;
+
+            const settle = (value) => {
+                if (settled) {
+                    return;
+                }
+
+                settled = true;
+                dom.confirmDialogForm.removeEventListener("submit", handleSubmit);
+                dom.rejectConfirmDialogButton.removeEventListener("click", handleReject);
+                dom.cancelConfirmDialogButton.removeEventListener("click", handleReject);
+                dom.confirmDialog.removeEventListener("cancel", handleCancel);
+                dom.confirmDialog.removeEventListener("close", handleClose);
+
+                if (dom.confirmDialog.open) {
+                    dom.confirmDialog.close();
+                }
+
+                resolve(value);
+            };
+
+            const handleSubmit = (event) => {
+                event.preventDefault();
+                settle(true);
+            };
+            const handleReject = () => settle(false);
+            const handleCancel = (event) => {
+                event.preventDefault();
+                settle(false);
+            };
+            const handleClose = () => settle(false);
+
+            dom.confirmDialogTitle.textContent = title;
+            dom.confirmDialogMessage.textContent = message;
+            dom.acceptConfirmDialogButton.textContent = acceptText;
+
+            dom.confirmDialogForm.addEventListener("submit", handleSubmit);
+            dom.rejectConfirmDialogButton.addEventListener("click", handleReject);
+            dom.cancelConfirmDialogButton.addEventListener("click", handleReject);
+            dom.confirmDialog.addEventListener("cancel", handleCancel);
+            dom.confirmDialog.addEventListener("close", handleClose);
+            dom.confirmDialog.showModal();
+        });
+    }
+
+    function enterRoomSelectionMode(roomCode) {
+        if (!roomCode) {
+            return;
+        }
+
+        state.selectingRooms = true;
+        state.selectedRoomCodes.add(roomCode);
+        closeRoomContextMenu();
+        renderRecentRooms();
+    }
+
+    function exitRoomSelectionMode() {
+        state.selectingRooms = false;
+        state.selectedRoomCodes.clear();
+        renderRecentRooms();
+    }
+
+    function toggleRoomSelection(roomCode) {
+        if (!roomCode) {
+            return;
+        }
+
+        if (state.selectedRoomCodes.has(roomCode)) {
+            state.selectedRoomCodes.delete(roomCode);
+        } else {
+            state.selectedRoomCodes.add(roomCode);
+        }
+
+        state.selectingRooms = state.selectedRoomCodes.size > 0;
+        renderRecentRooms();
+    }
+
+    async function deleteSelectedRooms() {
+        if (!state.user || state.selectedRoomCodes.size === 0) {
+            return;
+        }
+
+        const selectedCodes = new Set(state.selectedRoomCodes);
+
+        const confirmed = await askConfirm({
+            title: "حذف چت‌ها",
+            message: "چت‌های انتخاب‌شده فقط از لیست شما حذف می‌شوند.",
+            acceptText: "حذف"
+        });
+
+        if (!confirmed) {
+            return;
+        }
+
+        setRecentRooms(getRecentRooms().filter((room) => !selectedCodes.has(room.roomCode)));
+
+        if (state.room && selectedCodes.has(state.room.code)) {
+            leaveRoom();
+        }
+
+        state.selectedRoomCodes.clear();
+        state.selectingRooms = false;
+        renderRecentRooms();
+        setStatus(dom.chatStatus, "", false);
     }
 
     function clearSelectedFiles() {
@@ -382,31 +592,55 @@
     function renderRecentRooms() {
         if (!state.user) {
             dom.recentRoomsList.innerHTML = "";
+            renderRoomSelectionState();
             return;
         }
 
         const rooms = getRecentRooms();
+        const roomCodes = new Set(rooms.map((room) => room.roomCode));
+        state.selectedRoomCodes.forEach((roomCode) => {
+            if (!roomCodes.has(roomCode)) {
+                state.selectedRoomCodes.delete(roomCode);
+            }
+        });
 
         if (rooms.length === 0) {
             dom.recentRoomsList.innerHTML = '<div class="recent-room recent-room--empty"><div class="recent-room__meta">اتاقی نیست.</div></div>';
+            state.selectedRoomCodes.clear();
+            state.selectingRooms = false;
+            renderRoomSelectionState();
             return;
         }
 
         dom.recentRoomsList.innerHTML = rooms.map((room) => {
             const isActive = state.room?.code === room.roomCode;
+            const isSelected = state.selectedRoomCodes.has(room.roomCode);
             const title = room.roomName || `اتاق ${room.roomCode}`;
             const colorIndex = Number(room.roomCode || 0) % 4;
             return `
-                <button type="button" class="recent-room recent-room--tone-${colorIndex}${isActive ? " is-active" : ""}" data-room-code="${escapeHtml(room.roomCode)}">
+                <button type="button" class="recent-room recent-room--tone-${colorIndex}${isActive ? " is-active" : ""}${isSelected ? " is-selected" : ""}" data-room-code="${escapeHtml(room.roomCode)}" aria-pressed="${isSelected ? "true" : "false"}">
                     <span class="recent-room__avatar" aria-hidden="true"></span>
                     <span class="recent-room__content">
                         <span class="recent-room__title">${escapeHtml(title)}</span>
-                        <span class="recent-room__meta">${escapeHtml(room.roomCode)} • ${escapeHtml(formatDate(room.visitedAt))}</span>
+                        <span class="recent-room__meta">${escapeHtml(room.roomCode)}</span>
                     </span>
-                    <span class="recent-room__chevron" aria-hidden="true"></span>
                 </button>
             `;
         }).join("");
+
+        renderRoomSelectionState();
+    }
+
+    function renderRoomSelectionState() {
+        const count = state.selectedRoomCodes.size;
+        state.selectingRooms = count > 0;
+        dom.quickRoomForm.hidden = state.selectingRooms;
+        if (state.selectingRooms) {
+            closeContactSearch();
+        }
+        dom.roomSelectionBar.hidden = !state.selectingRooms;
+        dom.roomSelectionCount.textContent = `${new Intl.NumberFormat("fa-IR").format(count)} انتخاب`;
+        dom.deleteSelectedRoomsButton.disabled = count === 0;
     }
 
     function renderRoomMeta() {
@@ -418,7 +652,7 @@
         }
 
         dom.roomTitle.textContent = formatRoomTitle(state.room);
-        dom.roomSubtitle.textContent = `${formatDate(state.room.lastActivityAt)} • ${state.room.code}`;
+        dom.roomSubtitle.textContent = state.room.code;
         dom.openRoomNameButton.hidden = !state.room.isCreator;
     }
 
@@ -444,36 +678,147 @@
         dom.editBanner.hidden = !state.editingMessageId;
     }
 
+    function renderQuickRoomState() {
+        const roomCode = dom.quickRoomCodeInput.value.trim();
+        const canJoin = /^\d{4}$/.test(roomCode);
+        dom.quickJoinRoomButton.classList.toggle("is-disabled", !canJoin);
+        dom.quickJoinRoomButton.setAttribute("aria-disabled", canJoin ? "false" : "true");
+    }
+
+    function nudgeQuickRoomCodeInput() {
+        dom.quickRoomCodeInput.classList.remove("is-nudged");
+        void dom.quickRoomCodeInput.offsetWidth;
+        dom.quickRoomCodeInput.classList.add("is-nudged");
+    }
+
+    function renderContactSearchResults(contacts, message = "") {
+        if (message) {
+            dom.contactSearchResults.innerHTML = `<div class="contact-search-empty">${escapeHtml(message)}</div>`;
+            return;
+        }
+
+        if (!contacts || contacts.length === 0) {
+            dom.contactSearchResults.innerHTML = "";
+            return;
+        }
+
+        dom.contactSearchResults.innerHTML = contacts.map((contact) => `
+            <button type="button" class="contact-search-result" data-contact-id="${escapeHtml(contact.id)}">
+                <span class="contact-search-result__avatar" aria-hidden="true"></span>
+                <span>
+                    <strong>${escapeHtml(contact.displayName)}</strong>
+                    <small>${escapeHtml(contact.mobileDisplay)}</small>
+                </span>
+            </button>
+        `).join("");
+    }
+
+    async function searchContacts() {
+        const query = dom.contactSearchInput.value.trim();
+
+        if (query.length < 2) {
+            renderContactSearchResults([], query ? "حداقل ۲ کاراکتر وارد کنید." : "");
+            return;
+        }
+
+        renderContactSearchResults([], "در حال جستجو...");
+
+        try {
+            const params = new URLSearchParams({ q: query });
+            const data = await fetchJson(`${apiPath("/api/contacts/search")}?${params.toString()}`, {
+                method: "GET"
+            });
+            renderContactSearchResults(data.contacts || [], (data.contacts || []).length === 0 ? "مخاطبی پیدا نشد." : "");
+        } catch (error) {
+            renderContactSearchResults([], error.message);
+        }
+    }
+
+    function closeContactSearch() {
+        dom.contactSearchPanel.hidden = true;
+        dom.toggleContactSearchButton.classList.remove("is-active");
+        dom.quickRoomForm.classList.remove("is-searching");
+        dom.contactSearchInput.value = "";
+        renderContactSearchResults([]);
+        window.clearTimeout(state.contactSearchTimer);
+        renderQuickRoomState();
+    }
+
+    function toggleContactSearch() {
+        const opening = dom.contactSearchPanel.hidden;
+
+        if (opening) {
+            dom.contactSearchPanel.hidden = false;
+            dom.toggleContactSearchButton.classList.add("is-active");
+            dom.quickRoomForm.classList.add("is-searching");
+            dom.contactSearchInput.focus();
+            searchContacts().catch(() => {});
+        } else {
+            closeContactSearch();
+        }
+    }
+
+    function handleContactSearchOutsideClick(event) {
+        if (dom.contactSearchPanel.hidden) {
+            return;
+        }
+
+        const target = event.target;
+        const clickedSearchArea = dom.contactSearchInput.contains(target)
+            || dom.toggleContactSearchButton.contains(target)
+            || dom.contactSearchPanel.contains(target);
+
+        if (!clickedSearchArea) {
+            closeContactSearch();
+        }
+    }
+
     function renderMessages() {
-        const messages = Array.from(state.messages.values()).sort((left, right) => left.id - right.id);
+        const messages = Array.from(state.messages.values())
+            .filter((message) => !message.isDeleted)
+            .sort((left, right) => left.id - right.id);
 
         if (messages.length === 0) {
             dom.messagesList.innerHTML = '<div class="message message--empty"><div class="message__body">اولین پیام را بنویسید.</div></div>';
             return;
         }
 
+        let lastDateKey = "";
+
         dom.messagesList.innerHTML = messages.map((message) => {
+            const messageDate = message.createdAt || message.updatedAt;
+            const dateKey = formatMessageDateKey(messageDate);
+            const dateSeparator = dateKey && dateKey !== lastDateKey
+                ? `<div class="message-date-separator"><span>${escapeHtml(formatMessageDate(messageDate))}</span></div>`
+                : "";
+
+            if (dateKey) {
+                lastDateKey = dateKey;
+            }
+
             const attachments = renderAttachments(message.attachments || []);
-            const replyMarkup = message.replyTo ? `
+            const replyMarkup = message.replyTo && !message.replyTo.isDeleted ? `
                 <div class="message__reply">
                     <div class="message__reply-meta">${escapeHtml(message.replyTo.senderName)} • ${escapeHtml(message.replyTo.senderMobile || "")}</div>
-                    <div>${escapeHtml(message.replyTo.isDeleted ? "این پیام حذف شده است." : (message.replyTo.bodyText || "فایل"))}</div>
+                    <div>${escapeHtml(message.replyTo.bodyText || "فایل")}</div>
                 </div>
             ` : "";
-            const bodyText = message.isDeleted
-                ? '<div class="message__body">این پیام حذف شده است.</div>'
-                : `<div class="message__body">${escapeHtml(message.bodyText || "")}</div>`;
+            const bodyText = `<div class="message__body">${escapeHtml(message.bodyText || "")}</div>`;
             return `
+                ${dateSeparator}
                 <article class="message${message.isOwn ? " is-own" : ""}" data-message-id="${message.id}" tabindex="0">
                     <div class="message__head">
                         <div class="message__author">
                             <strong>${escapeHtml(message.senderName)}</strong>
                         </div>
-                        <div class="message__time">${escapeHtml(formatDate(message.updatedAt))}${message.isEdited ? " • ویرایش‌شده" : ""}</div>
                     </div>
                     ${replyMarkup}
                     ${bodyText}
                     ${attachments}
+                    <div class="message__meta">
+                        <span class="message__time">${escapeHtml(formatMessageTime(messageDate))}</span>
+                        ${message.isEdited ? '<span class="message__edited-icon" title="ویرایش‌شده" aria-label="ویرایش‌شده"></span>' : ""}
+                    </div>
                 </article>
             `;
         }).join("");
@@ -567,6 +912,9 @@
         state.editingMessageId = null;
         state.replyingMessageId = null;
         state.contextMessageId = null;
+        state.contextRoomCode = null;
+        state.selectingRooms = false;
+        state.selectedRoomCodes.clear();
         clearSelectedFiles();
         renderShell();
         setStatus(dom.authStatus, "نشست شما منقضی شده است. دوباره وارد شوید.", true);
@@ -815,6 +1163,7 @@
             state.presence = data.presence || state.presence;
             updateRememberedRoomName(state.room);
             renderRoomMeta();
+            renderRecentRooms();
             dom.roomNameDialog.close();
         } catch (error) {
             setStatus(dom.roomNameStatus, error.message, true);
@@ -944,25 +1293,192 @@
         return state.contextMessageId ? state.messages.get(state.contextMessageId) : null;
     }
 
-    function openMessageMenu(messageId) {
+    function positionFloatingMenu(dialog, anchor, boundaryElement) {
+        const padding = 8;
+
+        dialog.style.left = "";
+        dialog.style.top = "";
+
+        const rect = dialog.getBoundingClientRect();
+        const width = rect.width || 260;
+        const height = rect.height || 260;
+        const bounds = boundaryElement.getBoundingClientRect();
+        const minLeft = bounds.left + padding;
+        const maxLeft = bounds.right - width - padding;
+        const minTop = bounds.top + padding;
+        const maxTop = bounds.bottom - height - padding;
+        let rawLeft = typeof anchor?.x === "number" ? anchor.x : bounds.left + ((bounds.width - width) / 2);
+        const rawTop = typeof anchor?.y === "number" ? anchor.y : bounds.top + padding;
+
+        if (anchor?.messageRect) {
+            rawLeft = anchor.preferredSide === "left"
+                ? anchor.messageRect.left - width - 6
+                : anchor.messageRect.right + 6;
+        }
+
+        const left = Math.min(Math.max(rawLeft, minLeft), Math.max(minLeft, maxLeft));
+        const top = Math.min(Math.max(rawTop, minTop), Math.max(minTop, maxTop));
+
+        dialog.style.left = `${left}px`;
+        dialog.style.top = `${top}px`;
+    }
+
+    function positionMessageMenu(anchor) {
+        positionFloatingMenu(dom.messageMenuDialog, anchor, dom.messagesList);
+    }
+
+    function messageAnchorFromElement(element) {
+        const rect = element.getBoundingClientRect();
+        const isOwn = element.classList.contains("is-own");
+
+        return {
+            x: rect.left + (rect.width / 2),
+            y: rect.top + Math.min(rect.height, 48),
+            messageRect: rect,
+            preferredSide: isOwn ? "left" : "right"
+        };
+    }
+
+    function openMessageMenu(messageId, anchor = null) {
         const message = state.messages.get(messageId);
 
         if (!message || message.isDeleted) {
             return;
         }
 
+        closeRoomContextMenu();
         state.contextMessageId = messageId;
         dom.messageEditButton.hidden = !message.isOwn;
         dom.messageDeleteButton.hidden = !message.isOwn;
 
         if (!dom.messageMenuDialog.open) {
-            dom.messageMenuDialog.showModal();
+            dom.messageMenuDialog.show();
         }
+
+        positionMessageMenu(anchor);
     }
 
     function closeMessageMenu() {
         if (dom.messageMenuDialog.open) {
             dom.messageMenuDialog.close();
+        }
+    }
+
+    function getContextRoom() {
+        return state.contextRoomCode ? findRememberedRoom(state.contextRoomCode) : null;
+    }
+
+    function roomAnchorFromElement(element) {
+        const rect = element.getBoundingClientRect();
+
+        return {
+            x: rect.left + 8,
+            y: rect.top + 8,
+            messageRect: rect,
+            preferredSide: "left"
+        };
+    }
+
+    function openRoomContextMenu(roomCode, anchor = null) {
+        const room = findRememberedRoom(roomCode);
+
+        if (!room) {
+            return;
+        }
+
+        closeMessageMenu();
+        state.contextRoomCode = roomCode;
+
+        if (!dom.roomContextMenuDialog.open) {
+            dom.roomContextMenuDialog.show();
+        }
+
+        positionFloatingMenu(dom.roomContextMenuDialog, anchor, dom.sidebar || dom.appScreen);
+    }
+
+    function closeRoomContextMenu() {
+        if (dom.roomContextMenuDialog.open) {
+            dom.roomContextMenuDialog.close();
+        }
+    }
+
+    function selectContextRoom() {
+        const room = getContextRoom();
+        closeRoomContextMenu();
+
+        if (!room) {
+            return;
+        }
+
+        enterRoomSelectionMode(room.roomCode);
+    }
+
+    async function copyContextRoomLink() {
+        const room = getContextRoom();
+        closeRoomContextMenu();
+
+        if (!room) {
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(window.location.origin + roomPath(room.roomCode));
+            setStatus(dom.chatStatus, "لینک اتاق کپی شد.", false);
+        } catch (error) {
+            setStatus(dom.chatStatus, "کپی خودکار انجام نشد.", true);
+        }
+    }
+
+    async function renameContextRoom() {
+        const room = getContextRoom();
+        closeRoomContextMenu();
+
+        if (!room) {
+            return;
+        }
+
+        try {
+            if (state.room?.code !== room.roomCode) {
+                await enterRoom(room.roomCode, false);
+            }
+
+            if (!state.room?.isCreator) {
+                setStatus(dom.chatStatus, "فقط سازنده اتاق می‌تواند نام را ویرایش کند.", true);
+                return;
+            }
+
+            openRoomNameDialog();
+        } catch (error) {
+            setStatus(dom.chatStatus, error.message, true);
+        }
+    }
+
+    async function deleteContextRoom() {
+        const room = getContextRoom();
+        closeRoomContextMenu();
+
+        if (!room) {
+            return;
+        }
+
+        const confirmed = await askConfirm({
+            title: "حذف چت",
+            message: "این چت فقط از لیست شما حذف می‌شود.",
+            acceptText: "حذف"
+        });
+
+        if (!confirmed) {
+            return;
+        }
+
+        removeRememberedRoom(room.roomCode);
+        state.selectedRoomCodes.delete(room.roomCode);
+
+        if (state.room?.code === room.roomCode) {
+            leaveRoom();
+        } else {
+            renderRecentRooms();
+            setStatus(dom.chatStatus, "", false);
         }
     }
 
@@ -1118,6 +1634,29 @@
         dom.openRoomMenuButton.addEventListener("click", openRoomMenu);
         dom.closeRoomMenuButton.addEventListener("click", closeRoomMenu);
         dom.closeMessageMenuButton.addEventListener("click", closeMessageMenu);
+        dom.closeRoomContextMenuButton.addEventListener("click", closeRoomContextMenu);
+        dom.roomContextSelectButton.addEventListener("click", selectContextRoom);
+        dom.roomContextRenameButton.addEventListener("click", () => {
+            renameContextRoom().catch((error) => {
+                setStatus(dom.chatStatus, error.message, true);
+            });
+        });
+        dom.roomContextCopyButton.addEventListener("click", () => {
+            copyContextRoomLink().catch((error) => {
+                setStatus(dom.chatStatus, error.message, true);
+            });
+        });
+        dom.roomContextDeleteButton.addEventListener("click", () => {
+            deleteContextRoom().catch((error) => {
+                setStatus(dom.chatStatus, error.message, true);
+            });
+        });
+        dom.cancelRoomSelectionButton.addEventListener("click", exitRoomSelectionMode);
+        dom.deleteSelectedRoomsButton.addEventListener("click", () => {
+            deleteSelectedRooms().catch((error) => {
+                setStatus(dom.chatStatus, error.message, true);
+            });
+        });
         dom.messageReplyButton.addEventListener("click", () => {
             const message = getContextMessage();
             closeMessageMenu();
@@ -1183,10 +1722,69 @@
             openRoomNameDialog();
         });
 
-        dom.openCreateRoomButton.addEventListener("click", () => openRoomDialog("create"));
-        dom.openJoinRoomButton.addEventListener("click", () => openRoomDialog("join"));
-        dom.welcomeCreateRoomButton.addEventListener("click", () => openRoomDialog("create"));
-        dom.welcomeJoinRoomButton.addEventListener("click", () => openRoomDialog("join"));
+        if (appConfig.initialRoom && dom.quickRoomCodeInput) {
+            dom.quickRoomCodeInput.value = appConfig.initialRoom;
+        }
+        renderQuickRoomState();
+        dom.quickRoomCodeInput.addEventListener("input", renderQuickRoomState);
+        dom.toggleContactSearchButton.addEventListener("click", toggleContactSearch);
+        document.addEventListener("pointerdown", handleContactSearchOutsideClick);
+        dom.contactSearchInput.addEventListener("input", () => {
+            window.clearTimeout(state.contactSearchTimer);
+            state.contactSearchTimer = window.setTimeout(() => {
+                searchContacts().catch(() => {});
+            }, 240);
+        });
+        dom.contactSearchResults.addEventListener("click", async (event) => {
+            const result = event.target.closest(".contact-search-result");
+
+            if (!result) {
+                return;
+            }
+
+            const mobile = result.querySelector("small")?.textContent || "";
+
+            try {
+                await navigator.clipboard.writeText(mobile);
+                setStatus(dom.chatStatus, "شماره مخاطب کپی شد.", false);
+            } catch (error) {
+                setStatus(dom.chatStatus, "کپی خودکار انجام نشد.", true);
+            }
+        });
+
+        dom.quickRoomForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            setStatus(dom.chatStatus, "", false);
+            const roomCode = dom.quickRoomCodeInput.value.trim();
+
+            if (!/^\d{4}$/.test(roomCode)) {
+                setStatus(dom.chatStatus, "کد اتاق باید ۴ رقمی باشد.", true);
+                nudgeQuickRoomCodeInput();
+                dom.quickRoomCodeInput.focus();
+                renderQuickRoomState();
+                return;
+            }
+
+            try {
+                await enterRoom(roomCode, false);
+                dom.quickRoomCodeInput.value = "";
+                renderQuickRoomState();
+            } catch (error) {
+                setStatus(dom.chatStatus, error.message, true);
+            }
+        });
+
+        dom.quickCreateRoomButton.addEventListener("click", async () => {
+            setStatus(dom.chatStatus, "", false);
+
+            try {
+                await enterRoom("", false);
+                dom.quickRoomCodeInput.value = "";
+            } catch (error) {
+                setStatus(dom.chatStatus, error.message, true);
+            }
+        });
+
         dom.closeRoomDialogButton.addEventListener("click", closeRoomDialog);
         dom.roomDialogForm.addEventListener("submit", async (event) => {
             event.preventDefault();
@@ -1207,11 +1805,86 @@
                 return;
             }
 
+            if (state.roomContextOpenedByPress) {
+                state.roomContextOpenedByPress = false;
+                event.preventDefault();
+                return;
+            }
+
+            closeRoomContextMenu();
+
+            if (state.selectingRooms) {
+                event.preventDefault();
+                toggleRoomSelection(button.dataset.roomCode || "");
+                return;
+            }
+
             try {
                 await enterRoom(button.dataset.roomCode || "", false);
             } catch (error) {
                 setStatus(dom.chatStatus, error.message, true);
             }
+        });
+
+        dom.recentRoomsList.addEventListener("contextmenu", (event) => {
+            const button = event.target.closest("[data-room-code]");
+
+            if (!button) {
+                return;
+            }
+
+            event.preventDefault();
+            openRoomContextMenu(button.dataset.roomCode || "", {
+                x: event.clientX,
+                y: event.clientY,
+                messageRect: button.getBoundingClientRect(),
+                preferredSide: "left"
+            });
+        });
+
+        dom.recentRoomsList.addEventListener("pointerdown", (event) => {
+            if (event.pointerType === "mouse") {
+                return;
+            }
+
+            const button = event.target.closest("[data-room-code]");
+
+            if (!button) {
+                return;
+            }
+
+            window.clearTimeout(state.roomLongPressTimer);
+            state.roomLongPressTimer = window.setTimeout(() => {
+                state.roomContextOpenedByPress = true;
+                openRoomContextMenu(button.dataset.roomCode || "", {
+                    x: event.clientX,
+                    y: event.clientY,
+                    messageRect: button.getBoundingClientRect(),
+                    preferredSide: "left"
+                });
+            }, 520);
+        });
+
+        ["pointerup", "pointercancel", "pointerleave"].forEach((eventName) => {
+            dom.recentRoomsList.addEventListener(eventName, () => {
+                window.clearTimeout(state.roomLongPressTimer);
+                state.roomLongPressTimer = null;
+            });
+        });
+
+        dom.recentRoomsList.addEventListener("keydown", (event) => {
+            if (event.key !== "ContextMenu") {
+                return;
+            }
+
+            const button = event.target.closest("[data-room-code]");
+
+            if (!button) {
+                return;
+            }
+
+            event.preventDefault();
+            openRoomContextMenu(button.dataset.roomCode || "", roomAnchorFromElement(button));
         });
 
         dom.leaveRoomButton.addEventListener("click", leaveRoom);
@@ -1257,6 +1930,17 @@
 
         dom.composerForm.addEventListener("submit", submitComposer);
         dom.messageInput.addEventListener("input", renderComposerState);
+        dom.messageInput.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+                return;
+            }
+
+            event.preventDefault();
+
+            if (!dom.sendButton.disabled) {
+                dom.composerForm.requestSubmit();
+            }
+        });
         dom.cancelReplyButton.addEventListener("click", exitReplyMode);
         dom.cancelEditButton.addEventListener("click", () => {
             exitEditMode();
@@ -1271,7 +1955,12 @@
             }
 
             event.preventDefault();
-            openMessageMenu(Number(message.dataset.messageId || 0));
+            openMessageMenu(Number(message.dataset.messageId || 0), {
+                x: event.clientX,
+                y: event.clientY,
+                messageRect: message.getBoundingClientRect(),
+                preferredSide: message.classList.contains("is-own") ? "left" : "right"
+            });
         });
 
         dom.messagesList.addEventListener("pointerdown", (event) => {
@@ -1287,7 +1976,12 @@
 
             window.clearTimeout(state.longPressTimer);
             state.longPressTimer = window.setTimeout(() => {
-                openMessageMenu(Number(message.dataset.messageId || 0));
+                openMessageMenu(Number(message.dataset.messageId || 0), {
+                    x: event.clientX,
+                    y: event.clientY,
+                    messageRect: message.getBoundingClientRect(),
+                    preferredSide: message.classList.contains("is-own") ? "left" : "right"
+                });
             }, 520);
         });
 
@@ -1310,8 +2004,25 @@
             }
 
             event.preventDefault();
-            openMessageMenu(Number(message.dataset.messageId || 0));
+            openMessageMenu(Number(message.dataset.messageId || 0), messageAnchorFromElement(message));
         });
+
+        document.addEventListener("pointerdown", (event) => {
+            if (dom.messageMenuDialog.open && !event.target.closest("#messageMenuDialog")) {
+                closeMessageMenu();
+            }
+
+            if (dom.roomContextMenuDialog.open && !event.target.closest("#roomContextMenuDialog")) {
+                closeRoomContextMenu();
+            }
+        });
+
+        window.addEventListener("resize", () => {
+            closeMessageMenu();
+            closeRoomContextMenu();
+        });
+        dom.messagesList.addEventListener("scroll", closeMessageMenu);
+        dom.recentRoomsList.addEventListener("scroll", closeRoomContextMenu);
 
         document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === "visible" && state.room) {

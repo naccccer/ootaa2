@@ -73,14 +73,26 @@ $basePath = app_base_path();
                         <div id="accountName" class="brand-card__title">-</div>
                         <div id="accountMobile" class="brand-card__meta">-</div>
                     </div>
-                    <button type="button" id="openCreateRoomButton" class="header-plus" aria-label="اتاق جدید"></button>
                 </div>
 
                 <div class="sidebar-section">
-                    <div class="sidebar-section__head">
-                        <h2>چت‌ها</h2>
-                        <div class="sidebar-section__actions">
-                            <button type="button" id="openJoinRoomButton" class="icon-button join-button" aria-label="ورود با کد"></button>
+                    <form id="quickRoomForm" class="quick-room-form">
+                        <button type="button" id="toggleContactSearchButton" class="icon-button search-button" aria-label="جستجوی مخاطب"></button>
+                        <div class="quick-room-field-stack">
+                            <input id="quickRoomCodeInput" class="quick-room-code-input" name="roomCode" type="text" inputmode="numeric" maxlength="4" pattern="\d{4}" placeholder="کد ۴ رقمی" aria-label="کد اتاق">
+                            <input id="contactSearchInput" class="quick-contact-search-input" type="search" autocomplete="off" placeholder="نام یا شماره موبایل" aria-label="جستجوی مخاطب">
+                        </div>
+                        <button type="submit" id="quickJoinRoomButton" class="icon-button join-button" aria-label="ورود به اتاق"></button>
+                        <button type="button" id="quickCreateRoomButton" class="icon-button add-chat-button" aria-label="اتاق جدید"></button>
+                    </form>
+                    <div id="contactSearchPanel" class="contact-search-panel" hidden>
+                        <div id="contactSearchResults" class="contact-search-results"></div>
+                    </div>
+                    <div id="roomSelectionBar" class="room-selection-bar" hidden>
+                        <span id="roomSelectionCount">۰ انتخاب</span>
+                        <div class="room-selection-bar__actions">
+                            <button type="button" id="deleteSelectedRoomsButton" class="icon-button delete-room-button" aria-label="حذف انتخاب‌شده‌ها"></button>
+                            <button type="button" id="cancelRoomSelectionButton" class="icon-button close-button" aria-label="لغو انتخاب"></button>
                         </div>
                     </div>
                     <div id="recentRoomsList" class="recent-rooms"></div>
@@ -92,10 +104,6 @@ $basePath = app_base_path();
                     <div class="welcome-card">
                         <span class="welcome-card__eyebrow">شروع</span>
                         <h2>اتاقی انتخاب نشده</h2>
-                        <div class="welcome-card__actions">
-                            <button type="button" id="welcomeCreateRoomButton" class="icon-button welcome-action add-chat-button" aria-label="اتاق جدید"></button>
-                            <button type="button" id="welcomeJoinRoomButton" class="icon-button welcome-action join-button" aria-label="ورود با کد"></button>
-                        </div>
                     </div>
                 </section>
 
@@ -223,6 +231,45 @@ $basePath = app_base_path();
                 <span>حذف</span>
             </button>
         </div>
+    </dialog>
+
+    <dialog id="roomContextMenuDialog" class="modal">
+        <div class="menu-card">
+            <div class="menu-card__head">
+                <strong>چت</strong>
+                <button type="button" id="closeRoomContextMenuButton" class="icon-button close-button" aria-label="بستن"></button>
+            </div>
+            <button type="button" id="roomContextSelectButton" class="menu-item">
+                <span class="menu-icon select-icon" aria-hidden="true"></span>
+                <span>انتخاب</span>
+            </button>
+            <button type="button" id="roomContextRenameButton" class="menu-item">
+                <span class="menu-icon edit-icon" aria-hidden="true"></span>
+                <span>ویرایش نام</span>
+            </button>
+            <button type="button" id="roomContextDeleteButton" class="menu-item danger-text">
+                <span class="menu-icon delete-icon" aria-hidden="true"></span>
+                <span>حذف</span>
+            </button>
+            <button type="button" id="roomContextCopyButton" class="menu-item">
+                <span class="menu-icon link-icon" aria-hidden="true"></span>
+                <span>کپی لینک</span>
+            </button>
+        </div>
+    </dialog>
+
+    <dialog id="confirmDialog" class="modal">
+        <form method="dialog" class="modal-card confirm-card" id="confirmDialogForm">
+            <div class="modal-card__head">
+                <h3 id="confirmDialogTitle">تایید</h3>
+                <button type="button" id="cancelConfirmDialogButton" class="icon-button close-button" aria-label="لغو"></button>
+            </div>
+            <p id="confirmDialogMessage" class="modal-card__copy"></p>
+            <div class="modal-card__actions">
+                <button type="button" id="rejectConfirmDialogButton" class="secondary-button">لغو</button>
+                <button type="submit" id="acceptConfirmDialogButton" class="primary-button danger-button">حذف</button>
+            </div>
+        </form>
     </dialog>
 
     <dialog id="registerNameDialog" class="modal">

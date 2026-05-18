@@ -210,6 +210,46 @@ class AuthService
         ];
     }
 
+    public function searchUsers(string $query, int $viewerUserId): array
+    {
+        $query = trim(preg_replace('/\s+/u', ' ', $query) ?? '');
+
+        if (mb_strlen($query) < 2) {
+            return ['contacts' => []];
+        }
+
+        $digits = preg_replace('/\D+/', '', $query) ?? '';
+        $nameLike = '%' . $this->escapeLike($query) . '%';
+        $mobileLike = $digits !== '' ? '%' . $this->escapeLike($digits) . '%' : '__NO_MOBILE_MATCH__';
+
+        $statement = $this->pdo->prepare(
+            "SELECT id, mobile_normalized, display_name
+             FROM users
+             WHERE id <> :viewer_user_id
+               AND (
+                    display_name LIKE :name_like ESCAPE '\\\\'
+                    OR REPLACE(REPLACE(mobile_normalized, '+98', '0'), '+', '') LIKE :mobile_like_display ESCAPE '\\\\'
+                    OR REPLACE(mobile_normalized, '+', '') LIKE :mobile_like_normalized ESCAPE '\\\\'
+               )
+             ORDER BY display_name ASC, id ASC
+             LIMIT 8"
+        );
+        $statement->execute([
+            'viewer_user_id' => $viewerUserId,
+            'name_like' => $nameLike,
+            'mobile_like_display' => $mobileLike,
+            'mobile_like_normalized' => $mobileLike,
+        ]);
+
+        return [
+            'contacts' => array_map(fn (array $user): array => [
+                'id' => (int) $user['id'],
+                'displayName' => (string) $user['display_name'],
+                'mobileDisplay' => MobileNumber::toDisplay((string) $user['mobile_normalized']),
+            ], $statement->fetchAll()),
+        ];
+    }
+
     private function replaceSessionsForUser(int $userId): void
     {
         $statement = $this->pdo->prepare('DELETE FROM auth_sessions WHERE user_id = :user_id');
@@ -336,6 +376,11 @@ class AuthService
             'mobileDisplay' => MobileNumber::toDisplay((string) $user['mobile_normalized']),
             'mobileNormalized' => (string) $user['mobile_normalized'],
         ];
+    }
+
+    private function escapeLike(string $value): string
+    {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
     }
 
     private function sanitizeDisplayName(string $displayName): string

@@ -63,6 +63,15 @@ try {
         ));
     }
 
+    if ($route === 'contacts/search' && $method === 'GET') {
+        $user = $auth->requireAuthenticatedUser();
+
+        JsonResponse::success($auth->searchUsers(
+            (string) Request::query('q', ''),
+            (int) $user['id']
+        ));
+    }
+
     if ($route === 'room/enter' && $method === 'POST') {
         JsonResponse::success($service->enterRoom(
             Request::input('roomCode'),
