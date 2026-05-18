@@ -11,11 +11,13 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 CREATE TABLE users (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    mobile_normalized VARCHAR(16) NOT NULL,
+    kind ENUM('registered', 'guest') NOT NULL DEFAULT 'registered',
+    mobile_normalized VARCHAR(16) NULL,
     display_name VARCHAR(40) NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255) NULL,
     created_at DATETIME(6) NOT NULL,
     updated_at DATETIME(6) NOT NULL,
+    KEY users_kind_index (kind),
     UNIQUE KEY users_mobile_unique (mobile_normalized)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -55,7 +57,7 @@ CREATE TABLE participants (
     room_id BIGINT UNSIGNED NOT NULL,
     user_id BIGINT UNSIGNED NOT NULL,
     display_name VARCHAR(40) NOT NULL,
-    mobile_display VARCHAR(11) NOT NULL,
+    mobile_display VARCHAR(11) NULL,
     joined_at DATETIME(6) NOT NULL,
     last_seen_at DATETIME(6) NOT NULL,
     UNIQUE KEY participants_room_user_unique (room_id, user_id),
@@ -73,7 +75,7 @@ CREATE TABLE messages (
     room_id BIGINT UNSIGNED NOT NULL,
     user_id BIGINT UNSIGNED NOT NULL,
     sender_display_name VARCHAR(40) NOT NULL,
-    sender_mobile_display VARCHAR(11) NOT NULL,
+    sender_mobile_display VARCHAR(11) NULL,
     body_text TEXT NULL,
     parent_message_id BIGINT UNSIGNED NULL,
     created_at DATETIME(6) NOT NULL,

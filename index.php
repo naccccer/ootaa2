@@ -174,8 +174,10 @@ $basePath = app_base_path();
                                 <span aria-hidden="true"></span>
                             </label>
                             <textarea id="messageInput" name="text" rows="1" maxlength="4000" placeholder="پیام بنویسید"></textarea>
+                            <button id="emojiButton" type="button" class="emoji-button" aria-label="Emoji" aria-expanded="false" aria-controls="emojiPicker"></button>
                             <button id="sendButton" type="submit" class="send-button" aria-label="ارسال"></button>
                         </div>
+                        <div id="emojiPicker" class="emoji-picker" hidden></div>
                     </form>
                 </section>
             </main>

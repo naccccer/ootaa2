@@ -1,6 +1,7 @@
 (function () {
     const appConfig = window.OOTAA_APP || { basePath: "", initialRoom: "", assets: {} };
     const pollDelay = 3000;
+    const quickEmojis = ["😀", "😂", "😍", "😎", "🥲", "😊", "😉", "😐", "😢", "😡", "👍", "👎", "👏", "🙏", "💪", "🔥", "❤️", "✨", "🎉", "✅", "☕", "🌹", "🤝", "💬"];
 
     const state = {
         authMode: "login",
@@ -135,6 +136,8 @@
         selectedFilesList: document.getElementById("selectedFilesList"),
         fileInput: document.getElementById("fileInput"),
         messageInput: document.getElementById("messageInput"),
+        emojiButton: document.getElementById("emojiButton"),
+        emojiPicker: document.getElementById("emojiPicker"),
         sendButton: document.getElementById("sendButton"),
         imagePreviewDialog: document.getElementById("imagePreviewDialog"),
         imagePreviewForm: document.getElementById("imagePreviewForm"),
@@ -1044,14 +1047,59 @@
         const hasFiles = state.selectedFiles.length > 0;
         const canSend = state.room && !state.busy && (state.editingMessageId ? hasText : (hasText || hasFiles));
 
+        resizeMessageInput();
         dom.sendButton.disabled = !canSend;
+        dom.emojiButton.disabled = Boolean(!state.room || state.busy);
         dom.fileInput.disabled = Boolean(state.editingMessageId || state.busy);
         dom.replyBanner.hidden = !state.replyingMessageId;
         dom.editBanner.hidden = !state.editingMessageId;
 
         if (!state.room || state.editingMessageId || state.busy) {
+            closeEmojiPicker();
             resetChatDropOverlay();
         }
+    }
+
+    function resizeMessageInput() {
+        const maxHeight = 112;
+
+        dom.messageInput.style.height = "auto";
+        dom.messageInput.style.height = `${Math.min(dom.messageInput.scrollHeight, maxHeight)}px`;
+        dom.messageInput.style.overflowY = dom.messageInput.scrollHeight > maxHeight ? "auto" : "hidden";
+    }
+
+    function renderEmojiPicker() {
+        dom.emojiPicker.innerHTML = quickEmojis.map((emoji) => (
+            `<button type="button" data-emoji="${emoji}" aria-label="${emoji}">${emoji}</button>`
+        )).join("");
+    }
+
+    function toggleEmojiPicker() {
+        const shouldOpen = dom.emojiPicker.hidden;
+
+        dom.emojiPicker.hidden = !shouldOpen;
+        dom.emojiButton.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+
+        if (shouldOpen) {
+            dom.messageInput.focus();
+        }
+    }
+
+    function closeEmojiPicker() {
+        dom.emojiPicker.hidden = true;
+        dom.emojiButton.setAttribute("aria-expanded", "false");
+    }
+
+    function insertEmoji(emoji) {
+        const input = dom.messageInput;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+
+        input.value = `${input.value.slice(0, start)}${emoji}${input.value.slice(end)}`;
+        input.selectionStart = start + emoji.length;
+        input.selectionEnd = start + emoji.length;
+        renderComposerState();
+        input.focus();
     }
 
     function renderQuickRoomState() {
@@ -2637,8 +2685,23 @@
         });
 
         dom.composerForm.addEventListener("submit", submitComposer);
+        dom.emojiButton.addEventListener("click", toggleEmojiPicker);
+        dom.emojiPicker.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-emoji]");
+
+            if (!button) {
+                return;
+            }
+
+            insertEmoji(button.dataset.emoji || "");
+        });
         dom.messageInput.addEventListener("input", renderComposerState);
         dom.messageInput.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                closeEmojiPicker();
+                return;
+            }
+
             if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
                 return;
             }
@@ -2839,6 +2902,10 @@
         });
 
         document.addEventListener("pointerdown", (event) => {
+            if (!dom.emojiPicker.hidden && !event.target.closest(".composer")) {
+                closeEmojiPicker();
+            }
+
             if (dom.messageMenuDialog.open && !event.target.closest("#messageMenuDialog")) {
                 closeMessageMenu();
             }
@@ -2849,6 +2916,7 @@
         });
 
         window.addEventListener("resize", () => {
+            closeEmojiPicker();
             closeMessageMenu();
             closeRoomContextMenu();
         });
@@ -2874,6 +2942,7 @@
         });
     }
 
+    renderEmojiPicker();
     bindEvents();
     renderAuthMode();
     renderShell();
