@@ -168,6 +168,15 @@ $basePath = app_base_path();
                         </div>
 
                         <div id="selectedFilesList" class="selected-files" hidden></div>
+                        <div id="uploadProgress" class="upload-progress" hidden aria-live="polite">
+                            <div class="upload-progress__meta">
+                                <span>Uploading</span>
+                                <strong id="uploadProgressText">0%</strong>
+                            </div>
+                            <div class="upload-progress__track">
+                                <span id="uploadProgressBar"></span>
+                            </div>
+                        </div>
 
                         <div class="composer-row">
                             <label class="file-button">
@@ -193,6 +202,15 @@ $basePath = app_base_path();
             </div>
             <div id="imagePreviewStage" class="image-preview-stage"></div>
             <textarea id="imageCaptionInput" rows="1" maxlength="4000" placeholder="کپشن"></textarea>
+            <div id="imageUploadProgress" class="upload-progress upload-progress--dialog" hidden aria-live="polite">
+                <div class="upload-progress__meta">
+                    <span>Uploading</span>
+                    <strong id="imageUploadProgressText">0%</strong>
+                </div>
+                <div class="upload-progress__track">
+                    <span id="imageUploadProgressBar"></span>
+                </div>
+            </div>
             <div id="imagePreviewThumbs" class="image-preview-thumbs" hidden></div>
             <div class="image-preview-card__actions">
                 <button type="button" id="cancelImagePreviewButton" class="ghost-button">لغو</button>

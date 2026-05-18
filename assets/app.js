@@ -31,6 +31,11 @@
         contactSearchTimer: null,
         roomContextOpenedByPress: false,
         busy: false,
+        uploadProgress: {
+            active: false,
+            percent: 0,
+            indeterminate: false
+        },
         authOtpFlow: {
             purpose: null,
             step: "request",
@@ -177,6 +182,9 @@
         editBannerText: document.getElementById("editBannerText"),
         cancelEditButton: document.getElementById("cancelEditButton"),
         selectedFilesList: document.getElementById("selectedFilesList"),
+        uploadProgress: document.getElementById("uploadProgress"),
+        uploadProgressText: document.getElementById("uploadProgressText"),
+        uploadProgressBar: document.getElementById("uploadProgressBar"),
         fileInput: document.getElementById("fileInput"),
         messageInput: document.getElementById("messageInput"),
         emojiButton: document.getElementById("emojiButton"),
@@ -187,6 +195,9 @@
         imagePreviewTitle: document.getElementById("imagePreviewTitle"),
         imagePreviewStage: document.getElementById("imagePreviewStage"),
         imageCaptionInput: document.getElementById("imageCaptionInput"),
+        imageUploadProgress: document.getElementById("imageUploadProgress"),
+        imageUploadProgressText: document.getElementById("imageUploadProgressText"),
+        imageUploadProgressBar: document.getElementById("imageUploadProgressBar"),
         imagePreviewThumbs: document.getElementById("imagePreviewThumbs"),
         closeImagePreviewButton: document.getElementById("closeImagePreviewButton"),
         cancelImagePreviewButton: document.getElementById("cancelImagePreviewButton"),
@@ -478,6 +489,56 @@
         }
 
         return payload.data;
+    }
+
+    function uploadJson(url, formData, onProgress) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+
+            xhr.open("POST", url, true);
+            xhr.withCredentials = true;
+            xhr.setRequestHeader("Accept", "application/json");
+
+            xhr.upload.addEventListener("progress", (event) => {
+                if (!event.lengthComputable || event.total <= 0) {
+                    onProgress?.({ indeterminate: true, percent: 0 });
+                    return;
+                }
+
+                onProgress?.({
+                    indeterminate: false,
+                    percent: Math.min(100, Math.max(0, Math.round((event.loaded / event.total) * 100)))
+                });
+            });
+
+            xhr.addEventListener("load", () => {
+                let payload = null;
+
+                try {
+                    payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+                } catch (error) {
+                    reject(new Error("Ù¾Ø§Ø³Ø® Ø³Ø±ÙˆØ± Ù…Ø¹ØªØ¨Ø± Ù†ÛŒØ³Øª."));
+                    return;
+                }
+
+                if (xhr.status === 401) {
+                    handleUnauthorized();
+                    reject(new Error(payload?.error?.message || "Ù†Ø´Ø³Øª Ø´Ù…Ø§ Ù…Ù†Ù‚Ø¶ÛŒ Ø´Ø¯Ù‡ Ø§Ø³Øª."));
+                    return;
+                }
+
+                if (xhr.status >= 400 || !payload?.ok) {
+                    reject(new Error(payload?.error?.message || "Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯."));
+                    return;
+                }
+
+                resolve(payload.data);
+            });
+
+            xhr.addEventListener("error", () => reject(new Error("Ø§Ø±ØªØ¨Ø§Ø· Ø¨Ø§ Ø³Ø±ÙˆØ± Ø¨Ø±Ù‚Ø±Ø§Ø± Ù†Ø´Ø¯.")));
+            xhr.addEventListener("abort", () => reject(new Error("Ø§Ø±Ø³Ø§Ù„ Ù…ØªÙˆÙ‚Ù Ø´Ø¯.")));
+            xhr.send(formData);
+        });
     }
 
     function userStorageKey(suffix) {
@@ -1266,15 +1327,56 @@
         `).join("");
     }
 
+    function setUploadProgress(progress) {
+        state.uploadProgress = {
+            active: Boolean(progress?.active),
+            percent: Number(progress?.percent || 0),
+            indeterminate: Boolean(progress?.indeterminate)
+        };
+        renderUploadProgress();
+    }
+
+    function renderUploadProgress() {
+        const progress = state.uploadProgress;
+        const percent = Math.min(100, Math.max(0, Math.round(progress.percent || 0)));
+        const text = progress.indeterminate ? "..." : `${new Intl.NumberFormat("fa-IR").format(percent)}%`;
+        const width = progress.indeterminate ? "36%" : `${percent}%`;
+
+        [dom.uploadProgress, dom.imageUploadProgress].forEach((element) => {
+            if (element) {
+                element.hidden = !progress.active;
+                element.classList.toggle("is-indeterminate", progress.active && progress.indeterminate);
+            }
+        });
+
+        [dom.uploadProgressText, dom.imageUploadProgressText].forEach((element) => {
+            if (element) {
+                element.textContent = text;
+            }
+        });
+
+        [dom.uploadProgressBar, dom.imageUploadProgressBar].forEach((element) => {
+            if (element) {
+                element.style.width = progress.active ? width : "0%";
+            }
+        });
+    }
+
     function renderComposerState() {
         const hasText = dom.messageInput.value.trim() !== "";
         const hasFiles = state.selectedFiles.length > 0;
         const canSend = state.room && !state.busy && (state.editingMessageId ? hasText : (hasText || hasFiles));
 
         resizeMessageInput();
+        renderUploadProgress();
         dom.sendButton.disabled = !canSend;
+        dom.sendImagePreviewButton.disabled = !canSend;
         dom.emojiButton.disabled = Boolean(!state.room || state.busy);
         dom.fileInput.disabled = Boolean(state.editingMessageId || state.busy);
+        dom.messageInput.disabled = Boolean(!state.room || state.busy);
+        dom.imageCaptionInput.disabled = Boolean(state.busy);
+        dom.closeImagePreviewButton.disabled = Boolean(state.busy);
+        dom.cancelImagePreviewButton.disabled = Boolean(state.busy);
         dom.replyBanner.hidden = !state.replyingMessageId;
         dom.editBanner.hidden = !state.editingMessageId;
 
@@ -1495,7 +1597,8 @@
 
             const messageAttachments = message.attachments || [];
             const isPhotoMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "image");
-            const isFileMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "download");
+            const isAudioMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "audio");
+            const isFileMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "download" || attachment.previewKind === "audio");
             const attachments = renderAttachments(messageAttachments);
             const isEntering = !state.renderedMessageIds.has(message.id);
             const isSelected = state.selectedMessageIds.has(message.id);
@@ -1509,7 +1612,7 @@
             const messageContent = isFileMessage ? `${attachments}${bodyText}` : `${bodyText}${attachments}`;
             return `
                 ${dateSeparator}
-                <article class="message${message.isOwn ? " is-own" : ""}${isPhotoMessage ? " message--photo" : ""}${isFileMessage ? " message--file" : ""}${isSelected ? " is-selected" : ""}${isEntering ? " is-entering" : ""}" data-message-id="${message.id}" tabindex="0" aria-selected="${isSelected ? "true" : "false"}">
+                <article class="message${message.isOwn ? " is-own" : ""}${isPhotoMessage ? " message--photo" : ""}${isFileMessage ? " message--file" : ""}${isAudioMessage ? " message--audio" : ""}${isSelected ? " is-selected" : ""}${isEntering ? " is-entering" : ""}" data-message-id="${message.id}" tabindex="0" aria-selected="${isSelected ? "true" : "false"}">
                     <span class="message__select-indicator" aria-hidden="true"></span>
                     ${shouldShowSenderName ? `
                         <div class="message__head">
@@ -1566,9 +1669,9 @@
             `;
         }
 
-        if (attachments.every((attachment) => attachment.previewKind === "download")) {
+        if (attachments.every((attachment) => attachment.previewKind === "download" || attachment.previewKind === "audio")) {
             return `
-                <div class="message__attachments message__attachments--files">
+                <div class="message__attachments message__attachments--files${attachments.every((attachment) => attachment.previewKind === "audio") ? " message__attachments--audio" : ""}">
                     ${attachments.map((attachment) => renderAttachmentPreview(attachment)).join("")}
                 </div>
             `;
@@ -1599,7 +1702,15 @@
         }
 
         if (attachment.previewKind === "audio") {
-            return `<audio controls preload="metadata" src="${escapeHtml(attachment.url)}" data-attachment-id="${escapeHtml(attachment.id)}"></audio>`;
+            return `
+                <div class="attachment-audio" data-attachment-id="${escapeHtml(attachment.id)}">
+                    <audio controls preload="metadata" src="${escapeHtml(attachment.url)}"></audio>
+                    <span class="attachment-file__meta">
+                        <strong>${escapeHtml(attachment.name)}</strong>
+                        <small>${escapeHtml(formatSize(attachment.sizeBytes))}</small>
+                    </span>
+                </div>
+            `;
         }
 
         return `
@@ -2234,6 +2345,7 @@
                 renderPresence();
                 renderMessages({ scroll: "preserve" });
             } else {
+                const hasFiles = state.selectedFiles.length > 0;
                 const formData = new FormData();
                 formData.append("roomCode", state.room.code);
                 formData.append(
@@ -2249,10 +2361,15 @@
                     formData.append("files[]", entry.file);
                 });
 
-                const data = await fetchJson(apiPath("/api/room/messages"), {
-                    method: "POST",
-                    body: formData
+                setUploadProgress({ active: hasFiles, percent: 0, indeterminate: false });
+                const data = await uploadJson(apiPath("/api/room/messages"), formData, (progress) => {
+                    setUploadProgress({
+                        active: hasFiles,
+                        percent: progress.percent,
+                        indeterminate: progress.indeterminate
+                    });
                 });
+                setUploadProgress({ active: hasFiles, percent: 100, indeterminate: false });
                 state.messages.set(data.message.id, data.message);
                 state.room = data.room || state.room;
                 state.presence = data.presence || state.presence;
@@ -2270,6 +2387,7 @@
         } catch (error) {
             setStatus(dom.chatStatus, error.message, true);
         } finally {
+            state.uploadProgress = { active: false, percent: 0, indeterminate: false };
             state.busy = false;
             renderComposerState();
         }
