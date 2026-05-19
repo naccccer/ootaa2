@@ -50,7 +50,6 @@ class RoomService
         }
 
         $participant = $this->upsertParticipant((int) $room['id'], $user);
-        $this->touchRoom((int) $room['id']);
         $room = $this->requireRoomById((int) $room['id']);
 
         return [
@@ -70,8 +69,36 @@ class RoomService
             'room' => $this->serializeRoom($room, (int) $user['id']),
             'participant' => $membership['participant'],
             'messages' => $messages,
+            'receipts' => $this->loadMessageReceiptsForViewer((int) $room['id'], (int) $user['id']),
             'syncCursor' => $this->resolveSyncCursor($messages),
             'presence' => $this->presenceForRoom((int) $room['id']),
+        ];
+    }
+
+    public function recentRooms(array $user): array
+    {
+        $this->purgeExpiredRooms();
+        $userId = (int) $user['id'];
+        $limit = 15;
+        $statement = $this->pdo->prepare(
+            'SELECT rooms.*
+             FROM participants
+             INNER JOIN rooms ON rooms.id = participants.room_id
+             WHERE participants.user_id = :user_id
+               AND rooms.expires_at > :now
+             ORDER BY rooms.last_activity_at DESC, rooms.id DESC
+             LIMIT ' . $limit
+        );
+        $statement->execute([
+            'user_id' => $userId,
+            'now' => $this->now(),
+        ]);
+
+        return [
+            'rooms' => array_map(
+                fn (array $room): array => $this->serializeRoom($room, $userId),
+                $statement->fetchAll()
+            ),
         ];
     }
 
@@ -119,6 +146,7 @@ class RoomService
         return [
             'room' => $this->serializeRoom($membership['room'], (int) $user['id']),
             'messages' => $messages,
+            'receipts' => $this->loadMessageReceiptsForViewer($roomId, (int) $user['id']),
             'syncCursor' => $this->resolveSyncCursor($messages, $cursor),
             'presence' => $this->presenceForRoom($roomId),
         ];
@@ -202,6 +230,7 @@ class RoomService
 
         return [
             'message' => $this->loadMessageById($messageId, (int) $user['id']),
+            'receipts' => $this->loadMessageReceiptsForViewer((int) $room['id'], (int) $user['id']),
             'room' => $this->serializeRoom($this->requireRoomById((int) $room['id']), (int) $user['id']),
             'presence' => $this->presenceForRoom((int) $room['id']),
         ];
@@ -231,6 +260,7 @@ class RoomService
 
         return [
             'message' => $this->loadMessageById($messageId, (int) $user['id']),
+            'receipts' => $this->loadMessageReceiptsForViewer((int) $message['room_id'], (int) $user['id']),
             'room' => $this->serializeRoom($this->requireRoomById((int) $message['room_id']), (int) $user['id']),
             'presence' => $this->presenceForRoom((int) $message['room_id']),
         ];
@@ -287,6 +317,7 @@ class RoomService
 
         return [
             'message' => $this->loadMessageById($messageId, (int) $user['id']),
+            'receipts' => $this->loadMessageReceiptsForViewer((int) $message['room_id'], (int) $user['id']),
             'room' => $this->serializeRoom($this->requireRoomById((int) $message['room_id']), (int) $user['id']),
             'presence' => $this->presenceForRoom((int) $message['room_id']),
         ];
@@ -778,9 +809,14 @@ class RoomService
         $replyTargets = $this->loadReplyTargets($messages);
         $messageIds = array_map(static fn (array $message): int => (int) $message['id'], $messages);
         $attachments = $this->loadAttachmentsForMessageIds($messageIds);
+        $receipts = $this->loadDeliveryReceiptsForMessageIds($messageIds);
 
-        return array_map(function (array $message) use ($replyTargets, $attachments, $viewerUserId): array {
+        return array_map(function (array $message) use ($replyTargets, $attachments, $viewerUserId, $receipts): array {
             $messageId = (int) $message['id'];
+            $receipt = $receipts[$messageId] ?? [
+                'deliveryStatus' => 'delivered',
+                'seenAt' => null,
+            ];
 
             return [
                 'id' => $messageId,
@@ -793,6 +829,8 @@ class RoomService
                 'isEdited' => $message['updated_at'] !== $message['created_at'] && $message['deleted_at'] === null,
                 'isDeleted' => $message['deleted_at'] !== null,
                 'isOwn' => $viewerUserId !== null && (int) $message['user_id'] === $viewerUserId,
+                'deliveryStatus' => $receipt['deliveryStatus'],
+                'seenAt' => $receipt['seenAt'],
                 'replyTo' => isset($replyTargets[$messageId]) ? $this->serializeReplyTarget($replyTargets[$messageId]) : null,
                 'attachments' => array_map(fn (array $attachment): array => $this->serializeAttachment($attachment), $attachments[$messageId] ?? []),
             ];
@@ -811,6 +849,10 @@ class RoomService
 
         $replyTargets = $this->loadReplyTargets([$message]);
         $attachments = $this->loadAttachmentsForMessageIds([$messageId]);
+        $receipt = $this->loadDeliveryReceiptsForMessageIds([$messageId])[$messageId] ?? [
+            'deliveryStatus' => 'delivered',
+            'seenAt' => null,
+        ];
 
         return [
             'id' => (int) $message['id'],
@@ -823,9 +865,76 @@ class RoomService
             'isEdited' => $message['updated_at'] !== $message['created_at'] && $message['deleted_at'] === null,
             'isDeleted' => $message['deleted_at'] !== null,
             'isOwn' => $viewerUserId !== null && (int) $message['user_id'] === $viewerUserId,
+            'deliveryStatus' => $receipt['deliveryStatus'],
+            'seenAt' => $receipt['seenAt'],
             'replyTo' => isset($replyTargets[$messageId]) ? $this->serializeReplyTarget($replyTargets[$messageId]) : null,
             'attachments' => array_map(fn (array $attachment): array => $this->serializeAttachment($attachment), $attachments[$messageId] ?? []),
         ];
+    }
+
+    private function loadMessageReceiptsForViewer(int $roomId, int $viewerUserId): array
+    {
+        $limit = (int) app_config('app.recent_messages_limit', 60);
+        $statement = $this->pdo->prepare(
+            'SELECT id
+             FROM (
+                SELECT id
+                FROM messages
+                WHERE room_id = :room_id
+                  AND user_id = :user_id
+                ORDER BY id DESC
+                LIMIT :message_limit
+             ) AS recent_messages
+             ORDER BY id ASC'
+        );
+        $statement->bindValue('room_id', $roomId, PDO::PARAM_INT);
+        $statement->bindValue('user_id', $viewerUserId, PDO::PARAM_INT);
+        $statement->bindValue('message_limit', $limit, PDO::PARAM_INT);
+        $statement->execute();
+        $messageIds = array_map(static fn (array $row): int => (int) $row['id'], $statement->fetchAll());
+
+        if ($messageIds === []) {
+            return [];
+        }
+
+        $receipts = $this->loadDeliveryReceiptsForMessageIds($messageIds);
+
+        return array_values(array_map(static fn (int $messageId): array => [
+            'id' => $messageId,
+            'deliveryStatus' => $receipts[$messageId]['deliveryStatus'] ?? 'delivered',
+            'seenAt' => $receipts[$messageId]['seenAt'] ?? null,
+        ], $messageIds));
+    }
+
+    private function loadDeliveryReceiptsForMessageIds(array $messageIds): array
+    {
+        if ($messageIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($messageIds), '?'));
+        $statement = $this->pdo->prepare(
+            "SELECT messages.id, messages.updated_at, MAX(participants.last_seen_at) AS seen_at
+             FROM messages
+             LEFT JOIN participants
+               ON participants.room_id = messages.room_id
+              AND participants.user_id <> messages.user_id
+             WHERE messages.id IN ($placeholders)
+             GROUP BY messages.id, messages.updated_at"
+        );
+        $statement->execute($messageIds);
+        $receipts = [];
+
+        foreach ($statement->fetchAll() as $row) {
+            $seenAt = $row['seen_at'] === null ? null : (string) $row['seen_at'];
+            $updatedAt = (string) $row['updated_at'];
+            $receipts[(int) $row['id']] = [
+                'deliveryStatus' => $seenAt !== null && strcmp($seenAt, $updatedAt) >= 0 ? 'seen' : 'delivered',
+                'seenAt' => $seenAt,
+            ];
+        }
+
+        return $receipts;
     }
 
     private function loadReplyTargets(array $messages): array

@@ -360,11 +360,15 @@ class AuthService
         self::$userResolved = true;
         self::$resolvedUser = null;
 
-        $tokenHash = $this->currentTokenHash();
+        $token = $this->currentToken();
 
-        if ($tokenHash === null) {
+        if ($token === null) {
             return null;
         }
+
+        $tokenHash = hash('sha256', $token);
+        $now = $this->now();
+        $expiresAt = $this->sessionExpiresAt();
 
         $statement = $this->pdo->prepare(
             'SELECT users.*
@@ -376,7 +380,7 @@ class AuthService
         );
         $statement->execute([
             'token_hash' => $tokenHash,
-            'now' => $this->now(),
+            'now' => $now,
         ]);
         $user = $statement->fetch();
 
@@ -387,13 +391,16 @@ class AuthService
 
         $touch = $this->pdo->prepare(
             'UPDATE auth_sessions
-             SET last_seen_at = :last_seen_at
+             SET last_seen_at = :last_seen_at,
+                 expires_at = :expires_at
              WHERE token_hash = :token_hash'
         );
         $touch->execute([
-            'last_seen_at' => $this->now(),
+            'last_seen_at' => $now,
+            'expires_at' => $expiresAt,
             'token_hash' => $tokenHash,
         ]);
+        $this->writeSessionCookie($token);
 
         self::$resolvedUser = $user;
 
@@ -524,8 +531,7 @@ class AuthService
         $token = bin2hex(random_bytes(32));
         $tokenHash = hash('sha256', $token);
         $now = $this->now();
-        $ttlSeconds = (int) app_config('auth.session_ttl_seconds', 60 * 60 * 24 * 30);
-        $expiresAt = date('Y-m-d H:i:s.u', time() + $ttlSeconds);
+        $expiresAt = $this->sessionExpiresAt();
 
         $statement = $this->pdo->prepare(
             'INSERT INTO auth_sessions (user_id, token_hash, created_at, last_seen_at, expires_at)
@@ -725,10 +731,9 @@ class AuthService
         $path = app_base_path();
         $cookiePath = $path === '' ? '/' : $path . '/';
         $cookieName = (string) app_config('auth.cookie_name');
-        $ttlSeconds = (int) app_config('auth.session_ttl_seconds', 60 * 60 * 24 * 30);
 
         setcookie($cookieName, $token, [
-            'expires' => time() + $ttlSeconds,
+            'expires' => $this->sessionExpiresAtTimestamp(),
             'path' => $cookiePath,
             'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
             'httponly' => true,
@@ -864,5 +869,17 @@ class AuthService
     private function now(): string
     {
         return (new DateTimeImmutable('now'))->format('Y-m-d H:i:s.u');
+    }
+
+    private function sessionExpiresAt(): string
+    {
+        return date('Y-m-d H:i:s.u', $this->sessionExpiresAtTimestamp());
+    }
+
+    private function sessionExpiresAtTimestamp(): int
+    {
+        $ttlSeconds = (int) app_config('auth.session_ttl_seconds', 60 * 60 * 24 * 30);
+
+        return time() + $ttlSeconds;
     }
 }

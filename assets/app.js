@@ -10,10 +10,12 @@
         room: null,
         participant: null,
         presence: { onlineCount: 0, participants: [] },
+        recentRooms: [],
         messages: new Map(),
         syncCursor: null,
         pollTimer: null,
         renderedMessageIds: new Set(),
+        expandedMessageIds: new Set(),
         editingMessageId: null,
         replyingMessageId: null,
         contextMessageId: null,
@@ -545,16 +547,44 @@
         return state.user ? `ootaa:${suffix}:user:${state.user.id}` : "";
     }
 
-    function getRecentRooms() {
-        return state.user ? readJson(userStorageKey("recent-rooms"), []) : [];
+    function getHiddenRecentRoomCodes() {
+        return state.user ? readJson(userStorageKey("hidden-recent-rooms"), []) : [];
     }
 
-    function setRecentRooms(rooms) {
+    function setHiddenRecentRoomCodes(roomCodes) {
         if (!state.user) {
             return;
         }
 
-        writeJson(userStorageKey("recent-rooms"), rooms);
+        writeJson(userStorageKey("hidden-recent-rooms"), Array.from(new Set(roomCodes.filter(Boolean))));
+    }
+
+    function showRememberedRoom(roomCode) {
+        if (!state.user || !roomCode) {
+            return;
+        }
+
+        setHiddenRecentRoomCodes(getHiddenRecentRoomCodes().filter((code) => code !== roomCode));
+    }
+
+    function getRecentRooms() {
+        if (!state.user) {
+            return [];
+        }
+
+        const hiddenCodes = new Set(getHiddenRecentRoomCodes());
+
+        return state.recentRooms
+            .filter((room) => !hiddenCodes.has(room.roomCode))
+            .sort((left, right) => {
+                const leftTime = parseDate(left.lastActivityAt || "")?.getTime() || 0;
+                const rightTime = parseDate(right.lastActivityAt || "")?.getTime() || 0;
+                return rightTime - leftTime;
+            });
+    }
+
+    function setRecentRooms(rooms) {
+        state.recentRooms = Array.isArray(rooms) ? rooms.slice() : [];
     }
 
     function getActiveRoomCode() {
@@ -582,13 +612,20 @@
             return;
         }
 
+        showRememberedRoom(room.code);
         const rooms = getRecentRooms();
         const existingRoom = rooms.find((item) => item.roomCode === room.code);
 
         if (existingRoom) {
-            setRecentRooms(rooms.map((item) => (
+            setRecentRooms(state.recentRooms.map((item) => (
                 item.roomCode === room.code
-                    ? { ...item, roomName: room.name || item.roomName || "" }
+                    ? {
+                        ...item,
+                        roomName: room.name || item.roomName || "",
+                        isCreator: Boolean(room.isCreator),
+                        lastActivityAt: room.lastActivityAt || item.lastActivityAt || "",
+                        expiresAt: room.expiresAt || item.expiresAt || ""
+                    }
                     : item
             )));
             return;
@@ -598,9 +635,11 @@
             {
                 roomCode: room.code,
                 roomName: room.name || "",
-                visitedAt: new Date().toISOString()
+                isCreator: Boolean(room.isCreator),
+                lastActivityAt: room.lastActivityAt || "",
+                expiresAt: room.expiresAt || ""
             },
-            ...rooms
+            ...state.recentRooms
         ].slice(0, 15);
 
         setRecentRooms(next);
@@ -611,9 +650,15 @@
             return;
         }
 
-        setRecentRooms(getRecentRooms().map((item) => (
+        setRecentRooms(state.recentRooms.map((item) => (
             item.roomCode === room.code
-                ? { ...item, roomName: room.name || "" }
+                ? {
+                    ...item,
+                    roomName: room.name || "",
+                    isCreator: Boolean(room.isCreator),
+                    lastActivityAt: room.lastActivityAt || item.lastActivityAt || "",
+                    expiresAt: room.expiresAt || item.expiresAt || ""
+                }
                 : item
         )));
     }
@@ -627,7 +672,8 @@
             return;
         }
 
-        setRecentRooms(getRecentRooms().filter((room) => room.roomCode !== roomCode));
+        setHiddenRecentRoomCodes([...getHiddenRecentRoomCodes(), roomCode]);
+        setRecentRooms(state.recentRooms.filter((room) => room.roomCode !== roomCode));
     }
 
     function askConfirm({ title = "تایید", message = "", acceptText = "تایید" } = {}) {
@@ -722,7 +768,8 @@
             return;
         }
 
-        setRecentRooms(getRecentRooms().filter((room) => !selectedCodes.has(room.roomCode)));
+        setHiddenRecentRoomCodes([...getHiddenRecentRoomCodes(), ...selectedCodes]);
+        setRecentRooms(state.recentRooms.filter((room) => !selectedCodes.has(room.roomCode)));
 
         if (state.room && selectedCodes.has(state.room.code)) {
             leaveRoom();
@@ -1205,11 +1252,18 @@
 
     async function finishAuthenticatedUser(user) {
         state.user = user;
+        state.recentRooms = [];
         renderShell();
         dom.appScreen.classList.remove("is-login-enter");
         void dom.appScreen.offsetWidth;
         dom.appScreen.classList.add("is-login-enter");
         window.setTimeout(() => dom.appScreen.classList.remove("is-login-enter"), 1300);
+
+        try {
+            await loadRecentRooms();
+        } catch (error) {
+            setStatus(dom.chatStatus, error.message, true);
+        }
 
         if (appConfig.initialRoom) {
             await enterRoom(appConfig.initialRoom, true);
@@ -1550,6 +1604,83 @@
         window.setTimeout(scrollToEnd, 360);
     }
 
+    function renderMessageDeliveryStatus(message) {
+        if (!message?.isOwn || message.isDeleted) {
+            return "";
+        }
+
+        const deliveryStatus = message.deliveryStatus === "seen" ? "seen" : "delivered";
+        const label = deliveryStatus === "seen" ? "Seen" : "Delivered";
+
+        return `
+            <span class="message__ticks message__ticks--${deliveryStatus}" aria-label="${label}" title="${label}">
+                <span class="message__tick"></span>
+                <span class="message__tick"></span>
+            </span>
+        `;
+    }
+
+    function renderMessageBody(message, options = {}) {
+        if (!message?.bodyText) {
+            return "";
+        }
+
+        const classes = ["message__body"];
+        const attributes = [];
+        const shouldCollapse = options.collapsible === true;
+
+        if (shouldCollapse) {
+            classes.push("message__body--collapsible");
+            attributes.push(`data-message-body="${message.id}"`);
+        }
+
+        const bodyMarkup = `<div class="${classes.join(" ")}"${attributes.length ? ` ${attributes.join(" ")}` : ""}>${escapeHtml(message.bodyText)}</div>`;
+
+        if (!shouldCollapse) {
+            return bodyMarkup;
+        }
+
+        const isExpanded = state.expandedMessageIds.has(message.id);
+
+        return `
+            <div class="message__body-wrap${isExpanded ? " is-expanded" : " is-collapsed"}" data-message-body-wrap="${message.id}">
+                ${bodyMarkup}
+                <button type="button" class="message__body-toggle" data-action="toggle-message-body" data-message-id="${message.id}" hidden>${isExpanded ? "Read less" : "Read more"}</button>
+            </div>
+        `;
+    }
+
+    function hydrateCollapsibleMessageBodies() {
+        dom.messagesList.querySelectorAll("[data-message-body-wrap]").forEach((wrap) => {
+            const body = wrap.querySelector("[data-message-body]");
+            const toggle = wrap.querySelector('[data-action="toggle-message-body"]');
+            const messageId = Number(wrap.dataset.messageBodyWrap || 0);
+
+            if (!body || !toggle || !messageId) {
+                return;
+            }
+
+            const previousExpanded = wrap.classList.contains("is-expanded");
+            wrap.classList.remove("is-expanded");
+            wrap.classList.add("is-collapsed");
+            toggle.hidden = true;
+
+            const isOverflowing = body.scrollHeight - body.clientHeight > 4;
+
+            if (!isOverflowing) {
+                state.expandedMessageIds.delete(messageId);
+                wrap.classList.remove("is-collapsed");
+                return;
+            }
+
+            const isExpanded = previousExpanded || state.expandedMessageIds.has(messageId);
+            wrap.classList.toggle("is-expanded", isExpanded);
+            wrap.classList.toggle("is-collapsed", !isExpanded);
+            toggle.textContent = isExpanded ? "Read less" : "Read more";
+            toggle.hidden = false;
+        });
+    }
+
     function renderMessages(options = {}) {
         const scrollMode = options.scroll || "preserve";
         const previousScrollHeight = dom.messagesList.scrollHeight;
@@ -1597,6 +1728,7 @@
 
             const messageAttachments = message.attachments || [];
             const isPhotoMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "image");
+            const isVideoMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "video");
             const isAudioMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "audio");
             const isFileMessage = messageAttachments.length > 0 && messageAttachments.every((attachment) => attachment.previewKind === "download" || attachment.previewKind === "audio");
             const attachments = renderAttachments(messageAttachments);
@@ -1608,11 +1740,11 @@
                     <div>${escapeHtml(message.replyTo.bodyText || "فایل")}</div>
                 </div>
             ` : "";
-            const bodyText = message.bodyText ? `<div class="message__body">${escapeHtml(message.bodyText)}</div>` : "";
+            const bodyText = renderMessageBody(message, { collapsible: !isPhotoMessage });
             const messageContent = isFileMessage ? `${attachments}${bodyText}` : `${bodyText}${attachments}`;
             return `
                 ${dateSeparator}
-                <article class="message${message.isOwn ? " is-own" : ""}${isPhotoMessage ? " message--photo" : ""}${isFileMessage ? " message--file" : ""}${isAudioMessage ? " message--audio" : ""}${isSelected ? " is-selected" : ""}${isEntering ? " is-entering" : ""}" data-message-id="${message.id}" tabindex="0" aria-selected="${isSelected ? "true" : "false"}">
+                <article class="message${message.isOwn ? " is-own" : ""}${isPhotoMessage ? " message--photo" : ""}${isVideoMessage ? " message--video" : ""}${isFileMessage ? " message--file" : ""}${isAudioMessage ? " message--audio" : ""}${isSelected ? " is-selected" : ""}${isEntering ? " is-entering" : ""}" data-message-id="${message.id}" tabindex="0" aria-selected="${isSelected ? "true" : "false"}">
                     <span class="message__select-indicator" aria-hidden="true"></span>
                     ${shouldShowSenderName ? `
                         <div class="message__head">
@@ -1625,6 +1757,7 @@
                     ${messageContent}
                     <div class="message__meta">
                         <span class="message__time">${escapeHtml(formatMessageTime(messageDate))}</span>
+                        ${renderMessageDeliveryStatus(message)}
                         ${message.isEdited ? '<span class="message__edited-icon" title="ویرایش‌شده" aria-label="ویرایش‌شده"></span>' : ""}
                     </div>
                 </article>
@@ -1633,6 +1766,7 @@
 
         messages.forEach((message) => state.renderedMessageIds.add(message.id));
         renderMessageSelectionState();
+        hydrateCollapsibleMessageBodies();
 
         if (scrollMode === "bottom" || (scrollMode === "auto" && wasNearBottom)) {
             scrollMessagesToBottom();
@@ -1669,6 +1803,14 @@
             `;
         }
 
+        if (attachments.every((attachment) => attachment.previewKind === "video")) {
+            return `
+                <div class="message__attachments message__attachments--video">
+                    ${attachments.map((attachment) => renderAttachmentPreview(attachment)).join("")}
+                </div>
+            `;
+        }
+
         if (attachments.every((attachment) => attachment.previewKind === "download" || attachment.previewKind === "audio")) {
             return `
                 <div class="message__attachments message__attachments--files${attachments.every((attachment) => attachment.previewKind === "audio") ? " message__attachments--audio" : ""}">
@@ -1698,7 +1840,15 @@
         }
 
         if (attachment.previewKind === "video") {
-            return `<video controls preload="metadata" src="${escapeHtml(attachment.url)}" data-attachment-id="${escapeHtml(attachment.id)}"></video>`;
+            return `
+                <div class="attachment-video" data-attachment-id="${escapeHtml(attachment.id)}">
+                    <video controls preload="metadata" playsinline src="${escapeHtml(attachment.url)}"></video>
+                    <span class="attachment-file__meta">
+                        <strong>${escapeHtml(attachment.name)}</strong>
+                        <small>${escapeHtml(formatSize(attachment.sizeBytes))}</small>
+                    </span>
+                </div>
+            `;
         }
 
         if (attachment.previewKind === "audio") {
@@ -1745,6 +1895,8 @@
             deletedAt: message.deletedAt || "",
             isDeleted: Boolean(message.isDeleted),
             isEdited: Boolean(message.isEdited),
+            deliveryStatus: message.deliveryStatus || "",
+            seenAt: message.seenAt || "",
             attachments: (message.attachments || []).map((attachment) => ({
                 id: attachment.id,
                 name: attachment.name,
@@ -1775,6 +1927,35 @@
         return changed;
     }
 
+    function applyMessageReceipts(receipts) {
+        let changed = false;
+
+        (receipts || []).forEach((receipt) => {
+            const messageId = Number(receipt?.id || 0);
+            const current = messageId ? state.messages.get(messageId) : null;
+
+            if (!current) {
+                return;
+            }
+
+            const nextDeliveryStatus = receipt.deliveryStatus === "seen" ? "seen" : "delivered";
+            const nextSeenAt = receipt.seenAt || null;
+
+            if (current.deliveryStatus === nextDeliveryStatus && (current.seenAt || null) === nextSeenAt) {
+                return;
+            }
+
+            state.messages.set(messageId, {
+                ...current,
+                deliveryStatus: nextDeliveryStatus,
+                seenAt: nextSeenAt
+            });
+            changed = true;
+        });
+
+        return changed;
+    }
+
     function applyBootstrapData(data) {
         state.room = data.room || null;
         state.participant = data.participant || null;
@@ -1782,8 +1963,10 @@
         state.syncCursor = data.syncCursor || null;
         state.messages.clear();
         state.renderedMessageIds.clear();
+        state.expandedMessageIds.clear();
 
         upsertMessages(data.messages || []);
+        applyMessageReceipts(data.receipts || []);
 
         if (state.room) {
             rememberRoom(state.room);
@@ -1799,6 +1982,7 @@
         state.presence = data.presence || state.presence;
         state.syncCursor = data.syncCursor || state.syncCursor;
         const messagesChanged = upsertMessages(data.messages || []);
+        const receiptsChanged = applyMessageReceipts(data.receipts || []);
 
         if (state.room) {
             rememberRoom(state.room);
@@ -1808,7 +1992,7 @@
         renderRoomMeta();
         renderPresence();
 
-        if (messagesChanged) {
+        if (messagesChanged || receiptsChanged) {
             renderMessages({ scroll: "auto" });
         }
     }
@@ -1819,8 +2003,10 @@
         state.room = null;
         state.participant = null;
         state.presence = { onlineCount: 0, participants: [] };
+        state.recentRooms = [];
         state.messages.clear();
         state.syncCursor = null;
+        state.expandedMessageIds.clear();
         state.editingMessageId = null;
         state.replyingMessageId = null;
         state.contextMessageId = null;
@@ -1844,6 +2030,26 @@
         renderShell();
     }
 
+    async function loadRecentRooms() {
+        if (!state.user) {
+            state.recentRooms = [];
+            renderRecentRooms();
+            return;
+        }
+
+        const data = await fetchJson(apiPath("/api/rooms/recent"), {
+            method: "GET"
+        });
+        setRecentRooms((data.rooms || []).map((room) => ({
+            roomCode: room.code,
+            roomName: room.name || "",
+            isCreator: Boolean(room.isCreator),
+            lastActivityAt: room.lastActivityAt || "",
+            expiresAt: room.expiresAt || ""
+        })));
+        renderRecentRooms();
+    }
+
     async function restoreSession() {
         try {
             await loadCurrentUser();
@@ -1857,6 +2063,12 @@
                 openGuestNameDialog();
             }
             return;
+        }
+
+        try {
+            await loadRecentRooms();
+        } catch (error) {
+            setStatus(dom.chatStatus, error.message, true);
         }
 
         const preferredRoom = appConfig.initialRoom || getActiveRoomCode();
@@ -1920,6 +2132,7 @@
         state.presence = { onlineCount: 0, participants: [] };
         state.messages.clear();
         state.syncCursor = null;
+        state.expandedMessageIds.clear();
         state.editingMessageId = null;
         state.replyingMessageId = null;
         state.selectingMessages = false;
@@ -2337,6 +2550,7 @@
                     })
                 });
                 state.messages.set(data.message.id, data.message);
+                applyMessageReceipts(data.receipts || []);
                 state.room = data.room || state.room;
                 state.presence = data.presence || state.presence;
                 exitEditMode();
@@ -2371,6 +2585,7 @@
                 });
                 setUploadProgress({ active: hasFiles, percent: 100, indeterminate: false });
                 state.messages.set(data.message.id, data.message);
+                applyMessageReceipts(data.receipts || []);
                 state.room = data.room || state.room;
                 state.presence = data.presence || state.presence;
                 dom.messageInput.value = "";
@@ -2440,6 +2655,7 @@
                 body: JSON.stringify({})
             });
             state.messages.set(data.message.id, data.message);
+            applyMessageReceipts(data.receipts || []);
             state.room = data.room || state.room;
             state.presence = data.presence || state.presence;
             state.selectedMessageIds.delete(messageId);
@@ -3488,6 +3704,32 @@
             closePhotoViewer();
         });
         dom.messagesList.addEventListener("click", (event) => {
+            const toggleButton = event.target.closest('[data-action="toggle-message-body"]');
+
+            if (toggleButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                const messageId = Number(toggleButton.dataset.messageId || 0);
+                const wrap = messageId ? dom.messagesList.querySelector(`[data-message-body-wrap="${messageId}"]`) : null;
+
+                if (!messageId || !wrap) {
+                    return;
+                }
+
+                const nextExpanded = !wrap.classList.contains("is-expanded");
+                wrap.classList.toggle("is-expanded", nextExpanded);
+                wrap.classList.toggle("is-collapsed", !nextExpanded);
+                toggleButton.textContent = nextExpanded ? "Read less" : "Read more";
+
+                if (nextExpanded) {
+                    state.expandedMessageIds.add(messageId);
+                } else {
+                    state.expandedMessageIds.delete(messageId);
+                }
+
+                return;
+            }
+
             const message = event.target.closest("[data-message-id]");
 
             if (state.selectingMessages && message) {
@@ -3617,6 +3859,10 @@
                 closeMessageMenu();
             }
 
+            if (dom.attachmentMenuDialog.open && !event.target.closest("#attachmentMenuDialog")) {
+                closeAttachmentMenu();
+            }
+
             if (dom.accountMenuDialog.open && !event.target.closest("#accountMenuDialog") && !event.target.closest("#openAccountMenuButton")) {
                 closeAccountMenu();
             }
@@ -3635,9 +3881,11 @@
             closeAccountMenu();
             closeRoomMenu();
             closeMessageMenu();
+            closeAttachmentMenu();
             closeRoomContextMenu();
         });
         dom.messagesList.addEventListener("scroll", closeMessageMenu);
+        dom.messagesList.addEventListener("scroll", closeAttachmentMenu);
         dom.recentRoomsList.addEventListener("scroll", closeRoomContextMenu);
 
         document.addEventListener("visibilitychange", () => {

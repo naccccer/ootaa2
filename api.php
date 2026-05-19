@@ -147,6 +147,12 @@ try {
         ));
     }
 
+    if ($route === 'rooms/recent' && $method === 'GET') {
+        JsonResponse::success($service->recentRooms(
+            $auth->requireAuthenticatedUser()
+        ));
+    }
+
     if ($route === 'room/name' && $method === 'PATCH') {
         JsonResponse::success($service->updateRoomName(
             (string) Request::input('roomCode', ''),
