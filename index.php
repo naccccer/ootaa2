@@ -17,8 +17,10 @@ $basePath = app_base_path();
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="manifest" href="<?= htmlspecialchars(asset_url('manifest.webmanifest'), ENT_QUOTES, 'UTF-8') ?>">
-    <link rel="icon" href="<?= htmlspecialchars(asset_url('public/pwa/icon.svg'), ENT_QUOTES, 'UTF-8') ?>" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="<?= htmlspecialchars(asset_url('public/pwa/icon-192.png'), ENT_QUOTES, 'UTF-8') ?>">
+    <link rel="icon" href="<?= htmlspecialchars(asset_url('public/Logo/app-icon.svg'), ENT_QUOTES, 'UTF-8') ?>" type="image/svg+xml">
+    <link rel="shortcut icon" href="<?= htmlspecialchars(asset_url('public/Logo/app-icon.svg'), ENT_QUOTES, 'UTF-8') ?>" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="<?= htmlspecialchars(asset_url('public/Logo/app-icon.svg'), ENT_QUOTES, 'UTF-8') ?>">
+    <link rel="preload" href="<?= htmlspecialchars(asset_url('public/fonts/NeueKabel-Book.otf'), ENT_QUOTES, 'UTF-8') ?>" as="font" type="font/otf" crossorigin>
     <link rel="preload" href="<?= htmlspecialchars(asset_url('public/fonts/Vazir-Regular-FD.woff2'), ENT_QUOTES, 'UTF-8') ?>" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="<?= htmlspecialchars(asset_url('assets/style.css'), ENT_QUOTES, 'UTF-8') ?>">
 </head>
@@ -31,7 +33,7 @@ $basePath = app_base_path();
                     <h1>ootaa.ir</h1>
                 </div>
 
-                <div class="auth-tabs" role="tablist" aria-label="ورود و ثبت‌نام" hidden>
+                <div class="auth-tabs" role="tablist" aria-label="ورود و ثبت‌نام">
                     <button type="button" id="loginTabButton" class="auth-tab is-active" data-auth-mode="login">ورود</button>
                     <button type="button" id="registerTabButton" class="auth-tab" data-auth-mode="register">ثبت‌نام</button>
                 </div>
@@ -41,9 +43,10 @@ $basePath = app_base_path();
                         <span>شماره موبایل</span>
                         <input id="loginMobileInput" name="mobile" type="tel" inputmode="numeric" autocomplete="username" placeholder="مثلاً 09123456789">
                     </label>
-                    <button id="loginSubmitButton" type="submit" class="primary-button">ورود / ثبت‌نام</button>
-                    <div class="auth-inline-actions" hidden>
-                        <button id="loginOtpButton" type="button" class="auth-link-button">ورود با کد یکبارمصرف</button>
+                    <input id="loginPasswordInput" name="password" type="hidden" value="">
+                    <button id="loginSubmitButton" type="submit" class="primary-button">ورود با کد تایید</button>
+                    <div class="auth-inline-actions">
+                        <button id="loginOtpButton" type="button" class="auth-link-button">ورود / ثبت‌نام با کد تایید</button>
                         <button id="forgotPasswordButton" type="button" class="auth-link-button">فراموشی رمز</button>
                     </div>
                 </form>
@@ -61,9 +64,22 @@ $basePath = app_base_path();
                     <button id="registerSubmitButton" type="submit" class="primary-button">ساخت حساب</button>
                 </form>
 
-                <button type="button" id="authGuestButton" class="guest-entry-button">ورود مهمان با کد اتاق</button>
                 <div id="authStatus" class="inline-status" hidden></div>
             </div>
+
+            <form id="authGuestForm" class="auth-guest-card">
+                <label class="field">
+                    <span>کد اتاق</span>
+                    <div class="room-code-digits" dir="ltr" aria-label="کد ۴ رقمی اتاق">
+                        <input class="room-code-digit" name="roomCodeDigit1" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم اول کد اتاق">
+                        <input class="room-code-digit" name="roomCodeDigit2" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم دوم کد اتاق">
+                        <input class="room-code-digit" name="roomCodeDigit3" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم سوم کد اتاق">
+                        <input class="room-code-digit" name="roomCodeDigit4" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم چهارم کد اتاق">
+                    </div>
+                </label>
+                <button type="submit" id="authGuestButton" class="guest-entry-button">ورود مهمان با کد اتاق</button>
+                <div id="authGuestStatus" class="inline-status" hidden></div>
+            </form>
         </section>
 
         <section id="appScreen" class="app-screen" hidden>
@@ -395,17 +411,13 @@ $basePath = app_base_path();
     </dialog>
 
     <dialog id="guestNameDialog" class="modal">
-        <form method="dialog" class="modal-card" id="guestNameForm">
+        <form method="dialog" class="modal-card guest-name-card" id="guestNameForm">
             <div class="modal-card__head">
-                <h3>نام مهمان</h3>
+                <button type="button" id="closeGuestNameDialogButton" class="icon-button close-button" aria-label="بستن"></button>
             </div>
             <label class="field">
                 <span>نام</span>
                 <input id="guestNameInput" name="displayName" type="text" maxlength="40" autocomplete="name" placeholder="نام شما">
-            </label>
-            <label class="field">
-                <span>کد اتاق</span>
-                <input id="guestRoomCodeInput" name="roomCode" type="text" inputmode="numeric" maxlength="4" pattern="\d{4}" placeholder="کد ۴ رقمی اتاق">
             </label>
             <div id="guestNameStatus" class="inline-status" hidden></div>
             <div class="modal-card__actions">

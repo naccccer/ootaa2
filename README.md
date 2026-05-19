@@ -111,7 +111,8 @@ Local defaults are defined in [config/app.php](/c:/xampp/htdocs/ootaa2/config/ap
 
 ## OTP and SMS
 
-- Local development defaults to fake SMS mode unless `SMSIR_FAKE=false` is provided.
+- On local development, SMS sending is always faked and OTP defaults to `12345`.
+- You can override the local fixed code with `OTP_FIXED_CODE`.
 - Real sms.ir settings are read from:
   - `SMSIR_API_KEY`
   - `SMSIR_VERIFY_URL`

@@ -8,7 +8,7 @@ class SmsIrService
 {
     public function sendVerify(string $mobileNormalized, string $code): array
     {
-        if ((bool) app_config('sms.fake', false)) {
+        if ((bool) app_config('sms.fake', false) || (bool) app_config('app.is_local', false)) {
             return [
                 'messageId' => random_int(100000, 999999),
                 'cost' => 0.0,

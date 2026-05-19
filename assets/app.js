@@ -46,7 +46,10 @@
             registerPassword: "",
             cooldownUntil: 0
         },
-        authOtpCooldownTimer: null
+        pendingGuestRoomCode: "",
+        authOtpCooldownTimer: null,
+        authStatusCooldownUntil: 0,
+        authStatusCooldownTimer: null
     };
 
     const dom = {
@@ -57,6 +60,7 @@
         loginForm: document.getElementById("loginForm"),
         registerForm: document.getElementById("registerForm"),
         loginMobileInput: document.getElementById("loginMobileInput"),
+        loginPasswordInput: document.getElementById("loginPasswordInput"),
         registerMobileInput: document.getElementById("registerMobileInput"),
         registerNameInput: document.getElementById("registerNameInput"),
         registerPasswordInput: document.getElementById("registerPasswordInput"),
@@ -64,7 +68,10 @@
         registerSubmitButton: document.getElementById("registerSubmitButton"),
         loginOtpButton: document.getElementById("loginOtpButton"),
         forgotPasswordButton: document.getElementById("forgotPasswordButton"),
+        authGuestForm: document.getElementById("authGuestForm"),
+        authGuestRoomCodeInputs: Array.from(document.querySelectorAll(".room-code-digit")),
         authGuestButton: document.getElementById("authGuestButton"),
+        authGuestStatus: document.getElementById("authGuestStatus"),
         authStatus: document.getElementById("authStatus"),
         registerNameDialog: document.getElementById("registerNameDialog"),
         registerNameForm: document.getElementById("registerNameForm"),
@@ -75,7 +82,7 @@
         guestNameDialog: document.getElementById("guestNameDialog"),
         guestNameForm: document.getElementById("guestNameForm"),
         guestNameInput: document.getElementById("guestNameInput"),
-        guestRoomCodeInput: document.getElementById("guestRoomCodeInput"),
+        closeGuestNameDialogButton: document.getElementById("closeGuestNameDialogButton"),
         guestNameStatus: document.getElementById("guestNameStatus"),
         guestAuthDialog: document.getElementById("guestAuthDialog"),
         guestAuthForm: document.getElementById("guestAuthForm"),
@@ -374,6 +381,65 @@
         target.classList.toggle("is-error", Boolean(isError));
     }
 
+    function getAuthGuestRoomCode() {
+        return dom.authGuestRoomCodeInputs.map((input) => input.value.trim()).join("");
+    }
+
+    function setAuthGuestRoomCode(roomCode) {
+        const digits = String(roomCode || "").replace(/\D/g, "").slice(0, 4).split("");
+        dom.authGuestRoomCodeInputs.forEach((input, index) => {
+            input.value = digits[index] || "";
+        });
+    }
+
+    function focusAuthGuestRoomCode(index = 0) {
+        const target = dom.authGuestRoomCodeInputs[Math.max(0, Math.min(index, dom.authGuestRoomCodeInputs.length - 1))];
+        target?.focus();
+        target?.select();
+    }
+
+    function formatFaNumber(value) {
+        return new Intl.NumberFormat("fa-IR").format(value);
+    }
+
+    function clearAuthStatusCooldown() {
+        window.clearInterval(state.authStatusCooldownTimer);
+        state.authStatusCooldownTimer = null;
+        state.authStatusCooldownUntil = 0;
+    }
+
+    function renderAuthStatusCooldown() {
+        const seconds = Math.max(0, Math.ceil((state.authStatusCooldownUntil - Date.now()) / 1000));
+
+        if (seconds <= 0) {
+            clearAuthStatusCooldown();
+            setStatus(dom.authStatus, "", false);
+            return;
+        }
+
+        setStatus(dom.authStatus, `ارسال مجدد تا ${formatFaNumber(seconds)} ثانیه دیگر ممکن است.`, true);
+    }
+
+    function startAuthStatusCooldown(seconds) {
+        const normalizedSeconds = Math.max(0, Number(seconds || 0));
+
+        if (normalizedSeconds <= 0) {
+            clearAuthStatusCooldown();
+            return;
+        }
+
+        clearAuthStatusCooldown();
+        state.authStatusCooldownUntil = Date.now() + (normalizedSeconds * 1000);
+        renderAuthStatusCooldown();
+        state.authStatusCooldownTimer = window.setInterval(renderAuthStatusCooldown, 1000);
+    }
+
+    function createApiError(payload, fallbackMessage) {
+        const error = new Error(payload?.error?.message || fallbackMessage);
+        error.details = payload?.error?.details || {};
+        return error;
+    }
+
     function showAuthToast(message) {
         const toast = document.createElement("div");
         toast.className = "auth-toast";
@@ -483,11 +549,11 @@
 
         if (response.status === 401 && !options.preserveUnauthorized) {
             handleUnauthorized();
-            throw new Error(payload?.error?.message || "نشست شما منقضی شده است.");
+            throw createApiError(payload, "نشست شما منقضی شده است.");
         }
 
         if (response.status >= 400 || !payload?.ok) {
-            throw new Error(payload?.error?.message || "درخواست انجام نشد.");
+            throw createApiError(payload, "درخواست انجام نشد.");
         }
 
         return payload.data;
@@ -1104,6 +1170,7 @@
         dom.registerTabButton.classList.toggle("is-active", !isLogin);
         dom.loginForm.hidden = !isLogin;
         dom.registerForm.hidden = isLogin;
+        clearAuthStatusCooldown();
         setStatus(dom.authStatus, "", false);
     }
 
@@ -1203,7 +1270,7 @@
         dom.authOtpResendButton.hidden = !isVerifyLike;
         dom.authOtpResendButton.disabled = cooldownSeconds > 0;
         dom.authOtpResendButton.textContent = cooldownSeconds > 0
-            ? `ارسال مجدد تا ${new Intl.NumberFormat("fa-IR").format(cooldownSeconds)}`
+            ? `ارسال مجدد تا ${formatFaNumber(cooldownSeconds)}`
             : "ارسال مجدد";
 
         if (purpose === "password_reset") {
@@ -1292,6 +1359,7 @@
         dom.guestLoginButton.hidden = !isGuest;
         dom.toggleContactSearchButton.hidden = isGuest;
         dom.quickCreateRoomButton.hidden = isGuest;
+        dom.quickRoomForm.classList.toggle("quick-room-form--guest", isGuest);
         if (isGuest) {
             closeContactSearch();
         }
@@ -2060,7 +2128,8 @@
         if (!state.user) {
             renderShell();
             if (appConfig.initialRoom) {
-                openGuestNameDialog();
+                setAuthGuestRoomCode(appConfig.initialRoom);
+                openGuestNameDialog(appConfig.initialRoom);
             }
             return;
         }
@@ -2192,6 +2261,7 @@
     async function handleAuthSubmit(mode, form) {
         state.busy = true;
         renderComposerState();
+        clearAuthStatusCooldown();
         setStatus(dom.authStatus, "", false);
 
         try {
@@ -2216,8 +2286,15 @@
     async function startUnifiedAuthOtp(mobile) {
         const normalizedMobile = String(mobile || "").trim();
 
+        if (!normalizedMobile) {
+            setStatus(dom.authStatus, "شماره موبایل را وارد کنید.", true);
+            dom.loginMobileInput.focus();
+            return false;
+        }
+
         state.busy = true;
         renderComposerState();
+        clearAuthStatusCooldown();
         setStatus(dom.authStatus, "", false);
 
         try {
@@ -2235,7 +2312,11 @@
             window.setTimeout(() => dom.authOtpCodeInput.focus(), 20);
             return true;
         } catch (error) {
-            setStatus(dom.authStatus, error.message, true);
+            if (error.details?.cooldownSeconds) {
+                startAuthStatusCooldown(error.details.cooldownSeconds);
+            } else {
+                setStatus(dom.authStatus, error.message, true);
+            }
             closeDialogAnimated(dom.authOtpDialog, resetAuthOtpFlow);
             return false;
         } finally {
@@ -2256,6 +2337,8 @@
             state.user = data.user;
             renderShell();
             closeDialogAnimated(dom.guestNameDialog);
+            state.pendingGuestRoomCode = "";
+            setAuthGuestRoomCode("");
             await enterRoom(roomCode, true);
             return true;
         } catch (error) {
@@ -2457,7 +2540,8 @@
         leaveRoom();
         handleUnauthorized(false);
         if (appConfig.initialRoom) {
-            openGuestNameDialog();
+            setAuthGuestRoomCode(appConfig.initialRoom);
+            openGuestNameDialog(appConfig.initialRoom);
         }
     }
 
@@ -3050,12 +3134,22 @@
         closeDialogAnimated(dom.registerNameDialog, () => setStatus(dom.registerNameStatus, "", false));
     }
 
-    function openGuestNameDialog() {
+    function openGuestNameDialog(roomCode = "") {
+        const normalizedRoomCode = String(roomCode || "").trim();
+
+        if (!/^\d{4}$/.test(normalizedRoomCode)) {
+            setStatus(dom.authGuestStatus, "کد اتاق باید ۴ رقمی باشد.", true);
+            focusAuthGuestRoomCode(normalizedRoomCode.length);
+            return;
+        }
+
+        state.pendingGuestRoomCode = normalizedRoomCode;
+        setStatus(dom.authGuestStatus, "", false);
+
         if (!dom.guestNameDialog.open) {
             setStatus(dom.guestNameStatus, "", false);
-            dom.guestRoomCodeInput.value = appConfig.initialRoom || dom.guestRoomCodeInput.value || "";
             dom.guestNameDialog.showModal();
-            (dom.guestNameInput.value.trim() ? dom.guestRoomCodeInput : dom.guestNameInput).focus();
+            dom.guestNameInput.focus();
         }
     }
 
@@ -3179,7 +3273,11 @@
 
         dom.loginForm.addEventListener("submit", (event) => {
             event.preventDefault();
-            startUnifiedAuthOtp(dom.loginMobileInput.value);
+            if (!dom.loginPasswordInput.value.trim()) {
+                startUnifiedAuthOtp(dom.loginMobileInput.value);
+                return;
+            }
+            handleAuthSubmit("login", dom.loginForm);
         });
         dom.loginOtpButton.addEventListener("click", () => {
             startUnifiedAuthOtp(dom.loginMobileInput.value);
@@ -3192,10 +3290,44 @@
 
         dom.registerForm.addEventListener("submit", (event) => {
             event.preventDefault();
-            startUnifiedAuthOtp(dom.registerMobileInput.value);
+            openRegisterNameDialog();
         });
 
-        dom.authGuestButton.addEventListener("click", openGuestNameDialog);
+        dom.authGuestForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+            openGuestNameDialog(getAuthGuestRoomCode());
+        });
+        dom.authGuestRoomCodeInputs.forEach((input, index) => {
+            input.addEventListener("input", () => {
+                const value = input.value.replace(/\D/g, "").slice(-1);
+                input.value = value;
+                setStatus(dom.authGuestStatus, "", false);
+
+                if (value && index < dom.authGuestRoomCodeInputs.length - 1) {
+                    focusAuthGuestRoomCode(index + 1);
+                }
+
+                if (value && getAuthGuestRoomCode().length === dom.authGuestRoomCodeInputs.length && !dom.guestNameDialog.open) {
+                    window.setTimeout(() => openGuestNameDialog(getAuthGuestRoomCode()), 80);
+                }
+            });
+            input.addEventListener("keydown", (event) => {
+                if (event.key === "Backspace" && !input.value && index > 0) {
+                    event.preventDefault();
+                    focusAuthGuestRoomCode(index - 1);
+                    dom.authGuestRoomCodeInputs[index - 1].value = "";
+                }
+            });
+            input.addEventListener("paste", (event) => {
+                event.preventDefault();
+                setAuthGuestRoomCode(event.clipboardData?.getData("text") || "");
+                focusAuthGuestRoomCode(Math.min(getAuthGuestRoomCode().length, dom.authGuestRoomCodeInputs.length - 1));
+
+                if (getAuthGuestRoomCode().length === dom.authGuestRoomCodeInputs.length && !dom.guestNameDialog.open) {
+                    window.setTimeout(() => openGuestNameDialog(getAuthGuestRoomCode()), 80);
+                }
+            });
+        });
 
         dom.logoutButton.addEventListener("click", () => {
             closeAccountMenu();
@@ -3319,7 +3451,7 @@
         dom.guestNameForm.addEventListener("submit", (event) => {
             event.preventDefault();
             const displayName = dom.guestNameInput.value.trim();
-            const roomCode = dom.guestRoomCodeInput.value.trim();
+            const roomCode = state.pendingGuestRoomCode.trim();
 
             if (!displayName) {
                 setStatus(dom.guestNameStatus, "نام را وارد کنید.", true);
@@ -3328,12 +3460,17 @@
             }
 
             if (!/^\d{4}$/.test(roomCode)) {
-                setStatus(dom.guestNameStatus, "کد اتاق باید ۴ رقمی باشد.", true);
-                dom.guestRoomCodeInput.focus();
+                closeDialogAnimated(dom.guestNameDialog);
+                setStatus(dom.authGuestStatus, "کد اتاق باید ۴ رقمی باشد.", true);
+                focusAuthGuestRoomCode(roomCode.length);
                 return;
             }
 
             createGuestAndEnter(displayName, roomCode);
+        });
+        dom.closeGuestNameDialogButton.addEventListener("click", () => {
+            state.pendingGuestRoomCode = "";
+            closeDialogAnimated(dom.guestNameDialog);
         });
         dom.guestAuthForm.addEventListener("submit", submitGuestAuth);
         dom.closeGuestAuthDialogButton.addEventListener("click", () => closeDialogAnimated(dom.guestAuthDialog));

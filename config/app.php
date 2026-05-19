@@ -20,6 +20,7 @@ return [
     'app' => [
         'name' => 'اوتا',
         'debug' => filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOL),
+        'is_local' => $isLocalEnvironment,
         'base_path' => $basePath,
         'room_expiry_seconds' => 60 * 60 * 24 * 7,
         'presence_window_seconds' => 120,
@@ -38,6 +39,7 @@ return [
         'ttl_seconds' => (int) (getenv('OTP_TTL_SECONDS') ?: 120),
         'max_attempts' => (int) (getenv('OTP_MAX_ATTEMPTS') ?: 3),
         'resend_cooldown_seconds' => (int) (getenv('OTP_RESEND_COOLDOWN_SECONDS') ?: 60),
+        'fixed_code' => trim((string) (getenv('OTP_FIXED_CODE') ?: ($isLocalEnvironment ? '12345' : ''))),
     ],
     'sms' => [
         'api_key' => getenv('SMSIR_API_KEY') ?: '',

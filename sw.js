@@ -17,9 +17,7 @@ const SHELL_URLS = [
     withBase("/assets/style.css"),
     withBase("/assets/app.js"),
     withBase("/public/fonts/Vazir-Regular-FD.woff2"),
-    withBase("/public/pwa/icon-192.png"),
-    withBase("/public/pwa/icon-512.png"),
-    withBase("/public/pwa/icon.svg")
+    withBase("/public/Logo/app-icon.svg")
 ];
 
 self.addEventListener("install", (event) => {

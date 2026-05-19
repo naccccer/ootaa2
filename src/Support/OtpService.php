@@ -42,7 +42,7 @@ class OtpService
         $code = $this->generateCode();
         $metaToStore = $meta;
 
-        if ((bool) app_config('sms.fake', false)) {
+        if ((bool) app_config('sms.fake', false) || (bool) app_config('app.is_local', false)) {
             $metaToStore['_debugCode'] = $code;
         }
 
@@ -253,6 +253,12 @@ class OtpService
 
     private function generateCode(): string
     {
+        $fixedCode = preg_replace('/\D+/', '', (string) app_config('otp.fixed_code', ''));
+
+        if ($fixedCode !== null && $fixedCode !== '') {
+            return $fixedCode;
+        }
+
         $length = max(4, (int) app_config('otp.length', 5));
         $min = (int) (10 ** ($length - 1));
         $max = (int) ((10 ** $length) - 1);
