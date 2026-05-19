@@ -707,8 +707,9 @@ button {
 .auth-guest-card {
     padding: 22px 20px;
     border-radius: 24px;
-    background: rgba(255, 255, 255, 0.82);
-    box-shadow: 0 18px 46px rgba(28, 40, 52, 0.09);
+    border-color: rgba(255, 255, 255, 0.14);
+    background: #162235;
+    box-shadow: 0 18px 46px rgba(22, 34, 53, 0.18);
 }
 
 .auth-hero {
@@ -819,7 +820,7 @@ button {
     content: "";
     height: 1px;
     border-radius: 999px;
-    background: #162235;
+    background: rgba(255, 255, 255, 0.72);
 }
 
 .room-code-digit {
@@ -837,19 +838,22 @@ button {
     justify-self: center;
     border: 0;
     border-radius: 13px;
-    background: linear-gradient(145deg, #5db9f5 0%, #30d2f2 100%);
+    background: linear-gradient(145deg, #2fa8e3 0%, #18b8d6 100%);
     color: #fff;
+    text-shadow: 0 1px 1px rgba(8, 37, 67, 0.28);
     font-size: 0.88rem;
     box-shadow:
-        0 12px 24px rgba(12, 86, 139, 0.3),
-        inset 0 1px 0 rgba(255, 255, 255, 0.28);
+        0 10px 20px rgba(24, 184, 214, 0.2),
+        0 0 10px rgba(47, 168, 227, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.34);
 }
 
 .guest-entry-button:hover {
     color: #fff;
     box-shadow:
-        0 14px 28px rgba(12, 86, 139, 0.34),
-        inset 0 1px 0 rgba(255, 255, 255, 0.28);
+        0 12px 24px rgba(24, 184, 214, 0.24),
+        0 0 12px rgba(47, 168, 227, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.36);
 }
 
 @keyframes toast-in {

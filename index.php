@@ -43,8 +43,11 @@ $basePath = app_base_path();
                         <span>شماره موبایل</span>
                         <input id="loginMobileInput" name="mobile" type="tel" inputmode="numeric" autocomplete="username" placeholder="مثلاً 09123456789">
                     </label>
-                    <input id="loginPasswordInput" name="password" type="hidden" value="">
-                    <button id="loginSubmitButton" type="submit" class="primary-button">ورود با کد تایید</button>
+                    <label class="field">
+                        <span>رمز</span>
+                        <input id="loginPasswordInput" name="password" type="password" autocomplete="current-password" placeholder="رمز حساب">
+                    </label>
+                    <button id="loginSubmitButton" type="submit" class="primary-button">ورود با رمز</button>
                     <div class="auth-inline-actions">
                         <button id="loginOtpButton" type="button" class="auth-link-button">ورود / ثبت‌نام با کد تایید</button>
                         <button id="forgotPasswordButton" type="button" class="auth-link-button">فراموشی رمز</button>
