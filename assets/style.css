@@ -591,7 +591,7 @@ button {
 
 .auth-tab.is-active,
 .primary-button {
-    background: linear-gradient(145deg, #5db9f5 0%, #30d2f2 100%);
+    background: linear-gradient(145deg, #0f5f9d 0%, #087097 100%);
     color: #fff;
     box-shadow:
         0 15px 28px rgba(39, 142, 232, 0.28),
@@ -841,14 +841,14 @@ button {
     color: #fff;
     font-size: 0.88rem;
     box-shadow:
-        0 12px 24px rgba(39, 142, 232, 0.22),
+        0 12px 24px rgba(12, 86, 139, 0.3),
         inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .guest-entry-button:hover {
     color: #fff;
     box-shadow:
-        0 14px 28px rgba(39, 142, 232, 0.26),
+        0 14px 28px rgba(12, 86, 139, 0.34),
         inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
