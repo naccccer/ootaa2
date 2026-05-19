@@ -1521,6 +1521,13 @@ button {
     align-items: center;
 }
 
+.modal-card__actions .primary-button,
+.modal-card__actions .secondary-button,
+.modal-card__actions .ghost-button {
+    min-width: 96px;
+    padding-inline: 22px;
+}
+
 .chat-panel {
     position: relative;
     display: flex;
