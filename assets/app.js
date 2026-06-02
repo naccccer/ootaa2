@@ -69,7 +69,8 @@
         loginOtpButton: document.getElementById("loginOtpButton"),
         forgotPasswordButton: document.getElementById("forgotPasswordButton"),
         authGuestForm: document.getElementById("authGuestForm"),
-        authGuestRoomCodeInputs: Array.from(document.querySelectorAll(".room-code-digit")),
+        authGuestCodeField: document.getElementById("authGuestCodeField"),
+        authGuestRoomCodeInputs: Array.from(document.querySelectorAll("#authGuestForm .room-code-digit")),
         authGuestButton: document.getElementById("authGuestButton"),
         authGuestCreateButton: document.getElementById("authGuestCreateButton"),
         authGuestStatus: document.getElementById("authGuestStatus"),
@@ -123,6 +124,7 @@
         recentRoomsList: document.getElementById("recentRoomsList"),
         quickRoomForm: document.getElementById("quickRoomForm"),
         roomAccessForm: document.getElementById("roomAccessForm"),
+        quickRoomCodeRow: document.getElementById("quickRoomCodeRow"),
         quickRoomCodeInput: document.getElementById("quickRoomCodeInput"),
         quickRoomCodeInputs: Array.from(document.querySelectorAll(".quick-room-code-digit")),
         quickJoinRoomButton: document.getElementById("quickJoinRoomButton"),
@@ -388,6 +390,29 @@
         return dom.authGuestRoomCodeInputs.map((input) => input.value.trim()).join("");
     }
 
+    function setAuthGuestCodeEntryOpen(isOpen, shouldFocus = false) {
+        dom.authGuestForm.classList.toggle("is-code-entry-open", isOpen);
+        dom.authGuestButton.setAttribute("aria-expanded", String(isOpen));
+        dom.authGuestCodeField.setAttribute("aria-hidden", String(!isOpen));
+        dom.authGuestRoomCodeInputs.forEach((input) => {
+            input.disabled = !isOpen;
+        });
+
+        if (isOpen && shouldFocus) {
+            window.setTimeout(() => focusAuthGuestRoomCode(getAuthGuestRoomCode().length), 120);
+        }
+    }
+
+    function handleAuthGuestOutsideClick(event) {
+        if (!dom.authGuestForm.classList.contains("is-code-entry-open")) {
+            return;
+        }
+
+        if (!dom.authGuestForm.contains(event.target)) {
+            setAuthGuestCodeEntryOpen(false);
+        }
+    }
+
     function setAuthGuestRoomCode(roomCode) {
         const digits = String(roomCode || "").replace(/\D/g, "").slice(0, 4).split("");
         dom.authGuestRoomCodeInputs.forEach((input, index) => {
@@ -418,9 +443,33 @@
         target?.select();
     }
 
+    function setQuickRoomCodeEntryOpen(isOpen, shouldFocus = false) {
+        dom.roomAccessForm.classList.toggle("is-code-entry-open", isOpen);
+        dom.quickJoinRoomButton.setAttribute("aria-expanded", String(isOpen));
+        dom.quickRoomCodeRow.setAttribute("aria-hidden", String(!isOpen));
+        dom.quickRoomCodeInputs.forEach((input) => {
+            input.disabled = !isOpen;
+        });
+        renderQuickRoomState();
+
+        if (isOpen && shouldFocus) {
+            window.setTimeout(() => focusQuickRoomCode(getQuickRoomCode().length), 120);
+        }
+    }
+
+    function handleQuickRoomOutsideClick(event) {
+        if (!dom.roomAccessForm.classList.contains("is-code-entry-open")) {
+            return;
+        }
+
+        if (!dom.roomAccessForm.contains(event.target)) {
+            setQuickRoomCodeEntryOpen(false);
+        }
+    }
+
     function generateGuestName() {
-        const suffix = Math.floor(1000 + Math.random() * 9000);
-        return `مهمان ${formatFaNumber(suffix)}`;
+        const suffix = Math.floor(100 + Math.random() * 900);
+        return `کاربر ${formatFaNumber(suffix)}`;
     }
 
     function formatFaNumber(value) {
@@ -1376,12 +1425,13 @@
         }
 
         dom.accountName.textContent = state.user.displayName;
-        dom.accountMobile.textContent = isGuest ? "مهمان" : state.user.mobileDisplay;
+        dom.accountMobile.hidden = isGuest;
+        dom.accountMobile.textContent = isGuest ? "" : state.user.mobileDisplay;
         dom.openProfileButton.hidden = isGuest;
         dom.openPasswordButton.hidden = isGuest;
         dom.guestRegisterButton.hidden = !isGuest;
         dom.guestLoginButton.hidden = !isGuest;
-        dom.toggleContactSearchButton.hidden = isGuest;
+        dom.toggleContactSearchButton.hidden = state.selectingRooms;
         dom.quickRoomForm.hidden = isGuest || state.selectingRooms;
         dom.roomAccessForm.classList.toggle("room-access-overlay--guest", isGuest);
         if (isGuest) {
@@ -1451,6 +1501,7 @@
     function renderRoomSelectionState() {
         const count = state.selectedRoomCodes.size;
         state.selectingRooms = count > 0;
+        dom.toggleContactSearchButton.hidden = state.selectingRooms;
         dom.quickRoomForm.hidden = state.selectingRooms || Boolean(state.user?.isGuest);
         dom.roomAccessForm.hidden = state.selectingRooms;
         if (state.selectingRooms) {
@@ -1588,7 +1639,7 @@
 
     function renderQuickRoomState() {
         const roomCode = getQuickRoomCode();
-        const canJoin = /^\d{4}$/.test(roomCode);
+        const canJoin = !dom.roomAccessForm.classList.contains("is-code-entry-open") || /^\d{4}$/.test(roomCode);
         dom.quickJoinRoomButton.classList.toggle("is-disabled", !canJoin);
         dom.quickJoinRoomButton.setAttribute("aria-disabled", canJoin ? "false" : "true");
     }
@@ -1602,11 +1653,13 @@
     function renderContactSearchResults(contacts, message = "") {
         if (message) {
             dom.contactSearchResults.innerHTML = `<div class="contact-search-empty">${escapeHtml(message)}</div>`;
+            dom.contactSearchPanel.hidden = false;
             return;
         }
 
         if (!contacts || contacts.length === 0) {
             dom.contactSearchResults.innerHTML = "";
+            dom.contactSearchPanel.hidden = true;
             return;
         }
 
@@ -1619,6 +1672,7 @@
                 </span>
             </button>
         `).join("");
+        dom.contactSearchPanel.hidden = false;
     }
 
     async function searchContacts() {
@@ -1663,15 +1717,15 @@
     function toggleContactSearch() {
         if (state.user?.isGuest) {
             closeContactSearch();
+            showAuthToast("برای جستجوی مخاطب ابتدا ثبت‌نام کنید.");
             return;
         }
 
-        const opening = dom.contactSearchPanel.hidden;
+        const opening = !dom.quickRoomForm.classList.contains("is-searching");
 
         if (opening) {
             delete dom.contactSearchPanel.dataset.motionToken;
             dom.contactSearchPanel.classList.remove("is-closing");
-            dom.contactSearchPanel.hidden = false;
             dom.toggleContactSearchButton.classList.add("is-active");
             dom.quickRoomForm.classList.add("is-searching");
             dom.contactSearchInput.focus();
@@ -1682,7 +1736,7 @@
     }
 
     function handleContactSearchOutsideClick(event) {
-        if (dom.contactSearchPanel.hidden) {
+        if (!dom.quickRoomForm.classList.contains("is-searching")) {
             return;
         }
 
@@ -3198,7 +3252,7 @@
 
         if (!allowCreate && !/^\d{4}$/.test(normalizedRoomCode)) {
             setStatus(dom.authGuestStatus, "کد اتاق باید ۴ رقمی باشد.", true);
-            focusAuthGuestRoomCode(normalizedRoomCode.length);
+            setAuthGuestCodeEntryOpen(true, true);
             return;
         }
 
@@ -3349,11 +3403,16 @@
 
         dom.authGuestForm.addEventListener("submit", (event) => {
             event.preventDefault();
+            if (!dom.authGuestForm.classList.contains("is-code-entry-open")) {
+                setAuthGuestCodeEntryOpen(true, true);
+                return;
+            }
             startGuestEntry(getAuthGuestRoomCode());
         });
         dom.authGuestCreateButton.addEventListener("click", () => {
             startGuestEntry("", true);
         });
+        document.addEventListener("pointerdown", handleAuthGuestOutsideClick);
         dom.authGuestRoomCodeInputs.forEach((input, index) => {
             input.addEventListener("input", () => {
                 const value = input.value.replace(/\D/g, "").slice(-1);
@@ -3588,7 +3647,7 @@
         dom.toggleContactSearchButton.addEventListener("click", toggleContactSearch);
         document.addEventListener("pointerdown", handleContactSearchOutsideClick);
         dom.contactSearchInput.addEventListener("input", () => {
-            if (dom.contactSearchPanel.hidden && !state.user?.isGuest) {
+            if (!dom.quickRoomForm.classList.contains("is-searching") && !state.user?.isGuest) {
                 toggleContactSearch();
             }
             window.clearTimeout(state.contactSearchTimer);
@@ -3597,7 +3656,7 @@
             }, 240);
         });
         dom.contactSearchInput.addEventListener("focus", () => {
-            if (dom.contactSearchPanel.hidden && !state.user?.isGuest) {
+            if (!dom.quickRoomForm.classList.contains("is-searching") && !state.user?.isGuest) {
                 toggleContactSearch();
             }
         });
@@ -3620,6 +3679,10 @@
         dom.roomAccessForm.addEventListener("submit", async (event) => {
             event.preventDefault();
             setStatus(dom.chatStatus, "", false);
+            if (!dom.roomAccessForm.classList.contains("is-code-entry-open")) {
+                setQuickRoomCodeEntryOpen(true, true);
+                return;
+            }
             const roomCode = getQuickRoomCode();
 
             if (!/^\d{4}$/.test(roomCode)) {
@@ -3633,6 +3696,7 @@
             try {
                 await enterRoom(roomCode, false);
                 setQuickRoomCode("");
+                setQuickRoomCodeEntryOpen(false);
                 renderQuickRoomState();
             } catch (error) {
                 setStatus(dom.chatStatus, error.message, true);
@@ -3645,11 +3709,13 @@
             try {
                 await enterRoom("", false);
                 setQuickRoomCode("");
+                setQuickRoomCodeEntryOpen(false);
                 renderQuickRoomState();
             } catch (error) {
                 setStatus(dom.chatStatus, error.message, true);
             }
         });
+        document.addEventListener("pointerdown", handleQuickRoomOutsideClick);
 
         dom.closeRoomDialogButton.addEventListener("click", closeRoomDialog);
         dom.roomDialogForm.addEventListener("submit", async (event) => {

@@ -705,11 +705,20 @@ button {
 }
 
 .auth-guest-card {
-    padding: 22px 20px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 16px;
+    padding: 20px;
     border-radius: 24px;
     border-color: rgba(255, 255, 255, 0.14);
     background: #162235;
     box-shadow: 0 18px 46px rgba(22, 34, 53, 0.18);
+    transition: row-gap 0.42s var(--ease-soft);
+}
+
+.auth-guest-card:not(.is-code-entry-open) {
+    row-gap: 0;
 }
 
 .auth-hero {
@@ -746,12 +755,14 @@ button {
     color: #687486;
     font-size: 0.82rem;
     font-weight: 700;
+    background: transparent;
+    box-shadow: none;
 }
 
 .auth-tab.is-active {
-    color: #162235;
-    background: #fff;
-    box-shadow: 0 7px 18px rgba(28, 40, 52, 0.08);
+    color: #fff;
+    background: #162235;
+    box-shadow: 0 7px 18px rgba(28, 40, 52, 0.12);
 }
 
 .auth-form {
@@ -801,6 +812,38 @@ button {
 .auth-guest-card .field {
     gap: 10px;
     justify-items: center;
+}
+
+.auth-guest-code-field {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: 100%;
+    max-height: 52px;
+    overflow: visible;
+    opacity: 1;
+    transform: translateY(0);
+    transition:
+        max-height 0.42s var(--ease-soft),
+        margin-bottom 0.42s var(--ease-soft),
+        opacity 0.28s ease,
+        transform 0.42s var(--ease-out-spring),
+        visibility 0s linear 0s;
+    visibility: visible;
+}
+
+.auth-guest-card:not(.is-code-entry-open) .auth-guest-code-field {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-10px);
+    visibility: hidden;
+    transition:
+        max-height 0.42s var(--ease-soft),
+        margin-bottom 0.42s var(--ease-soft),
+        opacity 0.28s ease,
+        transform 0.42s var(--ease-out-spring),
+        visibility 0s linear 0.42s;
 }
 
 .auth-guest-card .field > span {
@@ -862,6 +905,22 @@ button {
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
+.auth-guest-card .guest-entry-button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 12px;
+}
+
+#authGuestButton {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+#authGuestCreateButton {
+    grid-column: 2;
+    grid-row: 2;
+}
+
 @keyframes toast-in {
     from {
         opacity: 0;
@@ -916,7 +975,7 @@ button {
     position: relative;
     direction: rtl;
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr) 42px;
     align-items: center;
     gap: 14px;
     min-height: 68px;
@@ -988,6 +1047,20 @@ button {
 .burger-button {
     background: rgba(255, 255, 255, 0.1);
     color: #fff;
+}
+
+.brand-card .search-button {
+    width: 42px;
+    height: 42px;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: none;
+}
+
+.brand-card .search-button.is-active {
+    color: #fff;
+    background: var(--telegram-strong);
+    box-shadow: 0 10px 22px rgba(39, 142, 232, 0.24);
 }
 
 .join-button,
@@ -1064,13 +1137,12 @@ button {
 .sidebar-section {
     position: relative;
     display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
-    gap: 16px;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 0;
     padding: 0 6px;
-    border-top: 1px solid var(--line);
     min-width: 0;
     min-height: 0;
-    overflow-x: hidden;
+    overflow: visible;
 }
 
 .sidebar-section__head {
@@ -1093,12 +1165,36 @@ button {
 
 .quick-room-form {
     display: grid;
-    grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
     align-items: center;
     direction: rtl;
-    padding-top: 18px;
-    transition: grid-template-columns 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-10px);
+    visibility: hidden;
+    transition:
+        max-height 0.34s var(--ease-soft),
+        opacity 0.22s ease,
+        transform 0.34s var(--ease-out-spring),
+        visibility 0s linear 0.34s;
+}
+
+.quick-room-form.is-searching {
+    max-height: 40px;
+    margin-bottom: 16px;
+    overflow: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+    visibility: visible;
+    transition:
+        max-height 0.34s var(--ease-soft),
+        opacity 0.22s ease,
+        transform 0.34s var(--ease-out-spring),
+        visibility 0s linear 0s;
 }
 
 .quick-room-field-stack {
@@ -1167,23 +1263,54 @@ button {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     justify-items: center;
-    gap: 18px;
+    row-gap: 16px;
     align-items: center;
     align-self: end;
-    padding: 22px 22px 24px;
+    padding: 20px;
     margin-top: auto;
+    margin-block-start: 16px;
     direction: rtl;
     border-radius: 24px;
     background: #162235;
     box-shadow: 0 18px 46px rgba(22, 34, 53, 0.18);
     backdrop-filter: blur(14px);
+    transition: row-gap 0.42s var(--ease-soft);
+}
+
+.room-access-overlay:not(.is-code-entry-open) {
+    row-gap: 0;
 }
 
 .room-access-code-row {
     display: grid;
+    grid-column: 1 / -1;
     justify-items: center;
     width: 100%;
     min-width: 0;
+    max-height: 52px;
+    overflow: visible;
+    opacity: 1;
+    transform: translateY(0);
+    visibility: visible;
+    transition:
+        max-height 0.42s var(--ease-soft),
+        opacity 0.28s ease,
+        transform 0.42s var(--ease-out-spring),
+        visibility 0s linear 0s;
+}
+
+.room-access-overlay:not(.is-code-entry-open) .room-access-code-row {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-10px);
+    visibility: hidden;
+    transition:
+        max-height 0.42s var(--ease-soft),
+        opacity 0.28s ease,
+        transform 0.42s var(--ease-out-spring),
+        visibility 0s linear 0.42s;
 }
 
 .room-access-overlay .room-code-digits {
@@ -1206,10 +1333,10 @@ button {
 
 .room-access-actions {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 42px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
     align-items: center;
-    width: min(320px, 100%);
+    width: 100%;
 }
 
 .room-access-overlay .guest-entry-button {
@@ -1218,12 +1345,7 @@ button {
 }
 
 .room-access-create-button {
-    width: 42px;
-    height: 42px;
-    border-radius: 14px;
-    color: #dbeafe;
-    background: rgba(255, 255, 255, 0.12);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+    width: 100%;
 }
 
 .contact-search-panel {
@@ -1444,7 +1566,7 @@ button {
     box-shadow: var(--shadow-inset);
 }
 
-.recent-room.is-active {
+.recent-room.is-active:not(:hover):not(.is-selected) {
     background: transparent;
     box-shadow: none;
 }
@@ -1572,6 +1694,8 @@ button {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+    direction: ltr;
+    justify-content: flex-start;
 }
 
 .modal-card__actions--spread {
@@ -3174,8 +3298,6 @@ button {
 }
 
 .guest-name-card .modal-card__actions {
-    direction: ltr;
-    justify-content: flex-start;
     margin-top: 8px;
 }
 
@@ -3185,11 +3307,6 @@ button {
 
 .confirm-card {
     width: min(360px, calc(100vw - 32px));
-}
-
-.confirm-card .modal-card__actions {
-    direction: ltr;
-    justify-content: flex-start;
 }
 
 .confirm-card .danger-button {
@@ -3416,7 +3533,7 @@ button {
 }
 
 .burger-button {
-    --icon: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='black' d='M5 7.25A1.25 1.25 0 1 1 5 4.75a1.25 1.25 0 0 1 0 2.5Zm0 6A1.25 1.25 0 1 1 5 10.75a1.25 1.25 0 0 1 0 2.5Zm0 6A1.25 1.25 0 1 1 5 16.75a1.25 1.25 0 0 1 0 2.5Zm4-13.5h10v2.5H9v-2.5Zm0 6h10v2.5H9v-2.5Zm0 6h10v2.5H9v-2.5Z'/%3E%3C/svg%3E");
+    --icon: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='black' d='M4 5.75h16v2.5H4v-2.5Zm0 5h16v2.5H4v-2.5Zm0 5h16v2.5H4v-2.5Z'/%3E%3C/svg%3E");
 }
 
 .close-button {
@@ -3552,7 +3669,12 @@ button {
 @media (max-width: 860px) {
     .app-screen {
         grid-template-columns: 1fr;
+        grid-template-rows: minmax(0, 1fr);
         max-width: 430px;
+    }
+
+    .app-screen:not(.has-room) .workspace {
+        display: none;
     }
 
     .workspace {
@@ -3606,6 +3728,7 @@ button {
     }
 
     .sidebar {
+        height: 100%;
         gap: 14px;
         padding: 14px;
     }

@@ -71,17 +71,17 @@ $basePath = app_base_path();
             </div>
 
             <form id="authGuestForm" class="auth-guest-card">
-                <label class="field">
+                <label id="authGuestCodeField" class="field auth-guest-code-field" aria-hidden="true">
                     <span>کد اتاق</span>
                     <div class="room-code-digits" dir="ltr" aria-label="کد ۴ رقمی اتاق">
-                        <input class="room-code-digit" name="roomCodeDigit1" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم اول کد اتاق">
-                        <input class="room-code-digit" name="roomCodeDigit2" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم دوم کد اتاق">
-                        <input class="room-code-digit" name="roomCodeDigit3" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم سوم کد اتاق">
-                        <input class="room-code-digit" name="roomCodeDigit4" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم چهارم کد اتاق">
+                        <input class="room-code-digit" name="roomCodeDigit1" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم اول کد اتاق" disabled>
+                        <input class="room-code-digit" name="roomCodeDigit2" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم دوم کد اتاق" disabled>
+                        <input class="room-code-digit" name="roomCodeDigit3" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم سوم کد اتاق" disabled>
+                        <input class="room-code-digit" name="roomCodeDigit4" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم چهارم کد اتاق" disabled>
                     </div>
                 </label>
-                <button type="submit" id="authGuestButton" class="guest-entry-button">ورود مهمان با کد اتاق</button>
-                <button type="button" id="authGuestCreateButton" class="guest-entry-button guest-entry-button--secondary">ساخت اتاق مهمان</button>
+                <button type="submit" id="authGuestButton" class="guest-entry-button" aria-expanded="false" aria-controls="authGuestCodeField">ورود با کد</button>
+                <button type="button" id="authGuestCreateButton" class="guest-entry-button guest-entry-button--secondary">ساخت اتاق</button>
                 <div id="authGuestStatus" class="inline-status" hidden></div>
             </form>
         </section>
@@ -94,11 +94,11 @@ $basePath = app_base_path();
                         <div id="accountName" class="brand-card__title">-</div>
                         <div id="accountMobile" class="brand-card__meta">-</div>
                     </div>
+                    <button type="button" id="toggleContactSearchButton" class="icon-button search-button" aria-label="جستجوی مخاطب"></button>
                 </div>
 
                 <div class="sidebar-section">
                     <div id="quickRoomForm" class="quick-room-form quick-room-form--search">
-                        <button type="button" id="toggleContactSearchButton" class="icon-button search-button" aria-label="جستجوی مخاطب"></button>
                         <div class="quick-room-field-stack">
                             <input id="contactSearchInput" class="quick-contact-search-input" type="search" autocomplete="off" placeholder="نام یا شماره موبایل" aria-label="جستجوی مخاطب">
                         </div>
@@ -115,17 +115,17 @@ $basePath = app_base_path();
                     </div>
                     <div id="recentRoomsList" class="recent-rooms"></div>
                     <form id="roomAccessForm" class="room-access-overlay">
-                        <div class="room-access-code-row">
+                        <div id="quickRoomCodeRow" class="room-access-code-row" aria-hidden="true">
                             <div id="quickRoomCodeInput" class="quick-room-code-input room-code-digits" dir="ltr" aria-label="کد اتاق">
-                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit1" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم اول کد اتاق">
-                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit2" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم دوم کد اتاق">
-                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit3" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم سوم کد اتاق">
-                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit4" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم چهارم کد اتاق">
+                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit1" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم اول کد اتاق" disabled>
+                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit2" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم دوم کد اتاق" disabled>
+                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit3" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم سوم کد اتاق" disabled>
+                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit4" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم چهارم کد اتاق" disabled>
                             </div>
                         </div>
                         <div class="room-access-actions">
-                            <button type="submit" id="quickJoinRoomButton" class="guest-entry-button">ورود با کد اتاق</button>
-                            <button type="button" id="quickCreateRoomButton" class="icon-button add-chat-button room-access-create-button" aria-label="ساخت اتاق"></button>
+                            <button type="submit" id="quickJoinRoomButton" class="guest-entry-button" aria-expanded="false" aria-controls="quickRoomCodeRow">ورود با کد</button>
+                            <button type="button" id="quickCreateRoomButton" class="guest-entry-button guest-entry-button--secondary room-access-create-button">ساخت اتاق</button>
                         </div>
                     </form>
                 </div>
