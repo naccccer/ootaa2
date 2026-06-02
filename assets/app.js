@@ -71,6 +71,7 @@
         authGuestForm: document.getElementById("authGuestForm"),
         authGuestRoomCodeInputs: Array.from(document.querySelectorAll(".room-code-digit")),
         authGuestButton: document.getElementById("authGuestButton"),
+        authGuestCreateButton: document.getElementById("authGuestCreateButton"),
         authGuestStatus: document.getElementById("authGuestStatus"),
         authStatus: document.getElementById("authStatus"),
         registerNameDialog: document.getElementById("registerNameDialog"),
@@ -121,7 +122,9 @@
         sidebar: document.querySelector(".sidebar"),
         recentRoomsList: document.getElementById("recentRoomsList"),
         quickRoomForm: document.getElementById("quickRoomForm"),
+        roomAccessForm: document.getElementById("roomAccessForm"),
         quickRoomCodeInput: document.getElementById("quickRoomCodeInput"),
+        quickRoomCodeInputs: Array.from(document.querySelectorAll(".quick-room-code-digit")),
         quickJoinRoomButton: document.getElementById("quickJoinRoomButton"),
         quickCreateRoomButton: document.getElementById("quickCreateRoomButton"),
         toggleContactSearchButton: document.getElementById("toggleContactSearchButton"),
@@ -396,6 +399,28 @@
         const target = dom.authGuestRoomCodeInputs[Math.max(0, Math.min(index, dom.authGuestRoomCodeInputs.length - 1))];
         target?.focus();
         target?.select();
+    }
+
+    function getQuickRoomCode() {
+        return dom.quickRoomCodeInputs.map((input) => input.value.trim()).join("");
+    }
+
+    function setQuickRoomCode(roomCode) {
+        const digits = String(roomCode || "").replace(/\D/g, "").slice(0, 4).split("");
+        dom.quickRoomCodeInputs.forEach((input, index) => {
+            input.value = digits[index] || "";
+        });
+    }
+
+    function focusQuickRoomCode(index = 0) {
+        const target = dom.quickRoomCodeInputs[Math.max(0, Math.min(index, dom.quickRoomCodeInputs.length - 1))];
+        target?.focus();
+        target?.select();
+    }
+
+    function generateGuestName() {
+        const suffix = Math.floor(1000 + Math.random() * 9000);
+        return `مهمان ${formatFaNumber(suffix)}`;
     }
 
     function formatFaNumber(value) {
@@ -1341,9 +1366,8 @@
 
     function renderShell() {
         const loggedIn = Boolean(state.user);
-        const awaitingGuestName = !loggedIn && Boolean(appConfig.initialRoom);
         const isGuest = Boolean(state.user?.isGuest);
-        dom.authScreen.hidden = loggedIn || awaitingGuestName;
+        dom.authScreen.hidden = loggedIn;
         dom.appScreen.hidden = !loggedIn;
         dom.appScreen.classList.toggle("has-room", Boolean(state.room));
 
@@ -1358,8 +1382,8 @@
         dom.guestRegisterButton.hidden = !isGuest;
         dom.guestLoginButton.hidden = !isGuest;
         dom.toggleContactSearchButton.hidden = isGuest;
-        dom.quickCreateRoomButton.hidden = isGuest;
-        dom.quickRoomForm.classList.toggle("quick-room-form--guest", isGuest);
+        dom.quickRoomForm.hidden = isGuest || state.selectingRooms;
+        dom.roomAccessForm.classList.toggle("room-access-overlay--guest", isGuest);
         if (isGuest) {
             closeContactSearch();
         }
@@ -1398,7 +1422,7 @@
             const isActive = state.room?.code === room.roomCode;
             const isSelected = state.selectedRoomCodes.has(room.roomCode);
             const title = room.roomName || `اتاق ${room.roomCode}`;
-            const colorIndex = Number(room.roomCode || 0) % 4;
+            const colorIndex = roomToneIndex(`${room.roomCode || ""}:${title}`, 6);
             return `
                 <button type="button" class="recent-room recent-room--tone-${colorIndex}${isActive ? " is-active" : ""}${isSelected ? " is-selected" : ""}" data-room-code="${escapeHtml(room.roomCode)}" aria-pressed="${isSelected ? "true" : "false"}">
                     <span class="recent-room__avatar" aria-hidden="true"></span>
@@ -1413,10 +1437,22 @@
         renderRoomSelectionState();
     }
 
+    function roomToneIndex(value, toneCount) {
+        let hash = 0;
+        const source = String(value || "");
+
+        for (let index = 0; index < source.length; index += 1) {
+            hash = ((hash << 5) - hash + source.charCodeAt(index)) | 0;
+        }
+
+        return Math.abs(hash) % toneCount;
+    }
+
     function renderRoomSelectionState() {
         const count = state.selectedRoomCodes.size;
         state.selectingRooms = count > 0;
-        dom.quickRoomForm.hidden = state.selectingRooms;
+        dom.quickRoomForm.hidden = state.selectingRooms || Boolean(state.user?.isGuest);
+        dom.roomAccessForm.hidden = state.selectingRooms;
         if (state.selectingRooms) {
             closeContactSearch();
         }
@@ -1551,7 +1587,7 @@
     }
 
     function renderQuickRoomState() {
-        const roomCode = dom.quickRoomCodeInput.value.trim();
+        const roomCode = getQuickRoomCode();
         const canJoin = /^\d{4}$/.test(roomCode);
         dom.quickJoinRoomButton.classList.toggle("is-disabled", !canJoin);
         dom.quickJoinRoomButton.setAttribute("aria-disabled", canJoin ? "false" : "true");
@@ -1575,7 +1611,7 @@
         }
 
         dom.contactSearchResults.innerHTML = contacts.map((contact, index) => `
-            <button type="button" class="contact-search-result" data-contact-id="${escapeHtml(contact.id)}" style="--stagger-index: ${index}">
+            <button type="button" class="contact-search-result" data-contact-id="${escapeHtml(contact.id)}" data-contact-mobile="${escapeHtml(contact.mobileDisplay)}" data-contact-name="${escapeHtml(contact.displayName)}" style="--stagger-index: ${index}">
                 <span class="contact-search-result__avatar" aria-hidden="true"></span>
                 <span>
                     <strong>${escapeHtml(contact.displayName)}</strong>
@@ -1611,12 +1647,14 @@
         }
     }
 
-    function closeContactSearch() {
+    function closeContactSearch(options = {}) {
         dom.toggleContactSearchButton.classList.remove("is-active");
         dom.quickRoomForm.classList.remove("is-searching");
         window.clearTimeout(state.contactSearchTimer);
         animateHide(dom.contactSearchPanel, "is-closing", () => {
-            dom.contactSearchInput.value = "";
+            if (!options.preserveValue) {
+                dom.contactSearchInput.value = "";
+            }
             renderContactSearchResults([]);
             renderQuickRoomState();
         });
@@ -2129,7 +2167,7 @@
             renderShell();
             if (appConfig.initialRoom) {
                 setAuthGuestRoomCode(appConfig.initialRoom);
-                openGuestNameDialog(appConfig.initialRoom);
+                startGuestEntry(appConfig.initialRoom);
             }
             return;
         }
@@ -2180,6 +2218,26 @@
         if (!isAutomatic) {
             closeRoomDialog();
         }
+    }
+
+    async function enterContactRoom(contactId) {
+        if (!state.user || state.user.isGuest) {
+            return;
+        }
+
+        setStatus(dom.chatStatus, "", false);
+        const data = await fetchJson(apiPath("/api/room/contact"), {
+            method: "POST",
+            body: JSON.stringify({ contactId })
+        });
+
+        state.room = data.room;
+        state.participant = data.participant;
+        state.presence = data.presence || state.presence;
+        rememberRoom(state.room);
+        setActiveRoomCode(state.room.code);
+        renderShell();
+        await bootstrapRoom();
     }
 
     async function bootstrapRoom() {
@@ -2327,7 +2385,7 @@
 
     async function createGuestAndEnter(displayName, roomCode) {
         state.busy = true;
-        setStatus(dom.guestNameStatus, "", false);
+        setStatus(dom.authGuestStatus, "", false);
 
         try {
             const data = await fetchJson(apiPath("/api/auth/guest"), {
@@ -2336,13 +2394,12 @@
             });
             state.user = data.user;
             renderShell();
-            closeDialogAnimated(dom.guestNameDialog);
             state.pendingGuestRoomCode = "";
             setAuthGuestRoomCode("");
             await enterRoom(roomCode, true);
             return true;
         } catch (error) {
-            setStatus(dom.guestNameStatus, error.message, true);
+            setStatus(dom.authGuestStatus, error.message, true);
             return false;
         } finally {
             state.busy = false;
@@ -2541,7 +2598,7 @@
         handleUnauthorized(false);
         if (appConfig.initialRoom) {
             setAuthGuestRoomCode(appConfig.initialRoom);
-            openGuestNameDialog(appConfig.initialRoom);
+            startGuestEntry(appConfig.initialRoom);
         }
     }
 
@@ -2845,11 +2902,13 @@
 
     function positionFloatingMenu(dialog, anchor, boundaryElement) {
         const padding = 8;
+        const dialogPadding = parseFloat(window.getComputedStyle(dialog).paddingLeft) || 0;
 
         dialog.style.left = "";
         dialog.style.top = "";
 
-        const rect = dialog.getBoundingClientRect();
+        const card = dialog.querySelector(".menu-card");
+        const rect = card?.getBoundingClientRect() || dialog.getBoundingClientRect();
         const width = rect.width || 260;
         const height = rect.height || 260;
         const bounds = boundaryElement.getBoundingClientRect();
@@ -2869,8 +2928,8 @@
         const left = Math.min(Math.max(rawLeft, minLeft), Math.max(minLeft, maxLeft));
         const top = Math.min(Math.max(rawTop, minTop), Math.max(minTop, maxTop));
 
-        dialog.style.left = `${left}px`;
-        dialog.style.top = `${top}px`;
+        dialog.style.left = `${left - dialogPadding}px`;
+        dialog.style.top = `${top - dialogPadding}px`;
     }
 
     function positionMessageMenu(anchor) {
@@ -3134,23 +3193,17 @@
         closeDialogAnimated(dom.registerNameDialog, () => setStatus(dom.registerNameStatus, "", false));
     }
 
-    function openGuestNameDialog(roomCode = "") {
+    function startGuestEntry(roomCode = "", allowCreate = false) {
         const normalizedRoomCode = String(roomCode || "").trim();
 
-        if (!/^\d{4}$/.test(normalizedRoomCode)) {
+        if (!allowCreate && !/^\d{4}$/.test(normalizedRoomCode)) {
             setStatus(dom.authGuestStatus, "کد اتاق باید ۴ رقمی باشد.", true);
             focusAuthGuestRoomCode(normalizedRoomCode.length);
             return;
         }
 
-        state.pendingGuestRoomCode = normalizedRoomCode;
         setStatus(dom.authGuestStatus, "", false);
-
-        if (!dom.guestNameDialog.open) {
-            setStatus(dom.guestNameStatus, "", false);
-            dom.guestNameDialog.showModal();
-            dom.guestNameInput.focus();
-        }
+        createGuestAndEnter(generateGuestName(), normalizedRoomCode);
     }
 
     function openGuestAuthDialog(mode) {
@@ -3171,6 +3224,7 @@
     function positionAnchoredMenu(dialog, anchor, align = "end") {
         const gap = 8;
         const margin = 12;
+        const dialogPadding = parseFloat(window.getComputedStyle(dialog).paddingLeft) || 0;
         const anchorRect = anchor.getBoundingClientRect();
         const card = dialog.querySelector(".menu-card");
         const cardRect = card.getBoundingClientRect();
@@ -3189,8 +3243,8 @@
             ? belowTop
             : Math.min(Math.max(aboveTop, minTop), Math.max(minTop, maxTop));
 
-        dialog.style.left = `${left}px`;
-        dialog.style.top = `${top}px`;
+        dialog.style.left = `${left - dialogPadding}px`;
+        dialog.style.top = `${top - dialogPadding}px`;
     }
 
     function openAnchoredMenu(dialog, anchor, align = "end") {
@@ -3295,7 +3349,10 @@
 
         dom.authGuestForm.addEventListener("submit", (event) => {
             event.preventDefault();
-            openGuestNameDialog(getAuthGuestRoomCode());
+            startGuestEntry(getAuthGuestRoomCode());
+        });
+        dom.authGuestCreateButton.addEventListener("click", () => {
+            startGuestEntry("", true);
         });
         dom.authGuestRoomCodeInputs.forEach((input, index) => {
             input.addEventListener("input", () => {
@@ -3307,8 +3364,8 @@
                     focusAuthGuestRoomCode(index + 1);
                 }
 
-                if (value && getAuthGuestRoomCode().length === dom.authGuestRoomCodeInputs.length && !dom.guestNameDialog.open) {
-                    window.setTimeout(() => openGuestNameDialog(getAuthGuestRoomCode()), 80);
+                if (value && getAuthGuestRoomCode().length === dom.authGuestRoomCodeInputs.length) {
+                    window.setTimeout(() => startGuestEntry(getAuthGuestRoomCode()), 80);
                 }
             });
             input.addEventListener("keydown", (event) => {
@@ -3323,8 +3380,8 @@
                 setAuthGuestRoomCode(event.clipboardData?.getData("text") || "");
                 focusAuthGuestRoomCode(Math.min(getAuthGuestRoomCode().length, dom.authGuestRoomCodeInputs.length - 1));
 
-                if (getAuthGuestRoomCode().length === dom.authGuestRoomCodeInputs.length && !dom.guestNameDialog.open) {
-                    window.setTimeout(() => openGuestNameDialog(getAuthGuestRoomCode()), 80);
+                if (getAuthGuestRoomCode().length === dom.authGuestRoomCodeInputs.length) {
+                    window.setTimeout(() => startGuestEntry(getAuthGuestRoomCode()), 80);
                 }
             });
         });
@@ -3459,7 +3516,7 @@
                 return;
             }
 
-            if (!/^\d{4}$/.test(roomCode)) {
+            if (roomCode !== "" && !/^\d{4}$/.test(roomCode)) {
                 closeDialogAnimated(dom.guestNameDialog);
                 setStatus(dom.authGuestStatus, "کد اتاق باید ۴ رقمی باشد.", true);
                 focusAuthGuestRoomCode(roomCode.length);
@@ -3499,17 +3556,50 @@
         });
 
         if (appConfig.initialRoom && dom.quickRoomCodeInput) {
-            dom.quickRoomCodeInput.value = appConfig.initialRoom;
+            setQuickRoomCode(appConfig.initialRoom);
         }
         renderQuickRoomState();
-        dom.quickRoomCodeInput.addEventListener("input", renderQuickRoomState);
+        dom.quickRoomCodeInputs.forEach((input, index) => {
+            input.addEventListener("input", () => {
+                const value = input.value.replace(/\D/g, "").slice(-1);
+                input.value = value;
+
+                if (value && index < dom.quickRoomCodeInputs.length - 1) {
+                    focusQuickRoomCode(index + 1);
+                }
+
+                renderQuickRoomState();
+            });
+            input.addEventListener("keydown", (event) => {
+                if (event.key === "Backspace" && !input.value && index > 0) {
+                    event.preventDefault();
+                    focusQuickRoomCode(index - 1);
+                    dom.quickRoomCodeInputs[index - 1].value = "";
+                    renderQuickRoomState();
+                }
+            });
+            input.addEventListener("paste", (event) => {
+                event.preventDefault();
+                setQuickRoomCode(event.clipboardData?.getData("text") || "");
+                focusQuickRoomCode(Math.min(getQuickRoomCode().length, dom.quickRoomCodeInputs.length - 1));
+                renderQuickRoomState();
+            });
+        });
         dom.toggleContactSearchButton.addEventListener("click", toggleContactSearch);
         document.addEventListener("pointerdown", handleContactSearchOutsideClick);
         dom.contactSearchInput.addEventListener("input", () => {
+            if (dom.contactSearchPanel.hidden && !state.user?.isGuest) {
+                toggleContactSearch();
+            }
             window.clearTimeout(state.contactSearchTimer);
             state.contactSearchTimer = window.setTimeout(() => {
                 searchContacts().catch(() => {});
             }, 240);
+        });
+        dom.contactSearchInput.addEventListener("focus", () => {
+            if (dom.contactSearchPanel.hidden && !state.user?.isGuest) {
+                toggleContactSearch();
+            }
         });
         dom.contactSearchResults.addEventListener("click", async (event) => {
             const result = event.target.closest(".contact-search-result");
@@ -3518,32 +3608,31 @@
                 return;
             }
 
-            const mobile = result.querySelector("small")?.textContent || "";
-
             try {
-                await navigator.clipboard.writeText(mobile);
-                setStatus(dom.chatStatus, "شماره مخاطب کپی شد.", false);
+                await enterContactRoom(result.dataset.contactId || "");
+                dom.contactSearchInput.value = "";
+                closeContactSearch();
             } catch (error) {
-                setStatus(dom.chatStatus, "کپی خودکار انجام نشد.", true);
+                setStatus(dom.chatStatus, error.message, true);
             }
         });
 
-        dom.quickRoomForm.addEventListener("submit", async (event) => {
+        dom.roomAccessForm.addEventListener("submit", async (event) => {
             event.preventDefault();
             setStatus(dom.chatStatus, "", false);
-            const roomCode = dom.quickRoomCodeInput.value.trim();
+            const roomCode = getQuickRoomCode();
 
             if (!/^\d{4}$/.test(roomCode)) {
                 setStatus(dom.chatStatus, "کد اتاق باید ۴ رقمی باشد.", true);
                 nudgeQuickRoomCodeInput();
-                dom.quickRoomCodeInput.focus();
+                focusQuickRoomCode(roomCode.length);
                 renderQuickRoomState();
                 return;
             }
 
             try {
                 await enterRoom(roomCode, false);
-                dom.quickRoomCodeInput.value = "";
+                setQuickRoomCode("");
                 renderQuickRoomState();
             } catch (error) {
                 setStatus(dom.chatStatus, error.message, true);
@@ -3553,14 +3642,10 @@
         dom.quickCreateRoomButton.addEventListener("click", async () => {
             setStatus(dom.chatStatus, "", false);
 
-            if (state.user?.isGuest) {
-                setStatus(dom.chatStatus, "مهمان فقط می‌تواند وارد اتاق موجود شود.", true);
-                return;
-            }
-
             try {
                 await enterRoom("", false);
-                dom.quickRoomCodeInput.value = "";
+                setQuickRoomCode("");
+                renderQuickRoomState();
             } catch (error) {
                 setStatus(dom.chatStatus, error.message, true);
             }

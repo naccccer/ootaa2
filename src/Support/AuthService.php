@@ -859,8 +859,8 @@ class AuthService
     {
         $trimmed = trim($password);
 
-        if (strlen($trimmed) < 8) {
-            throw new ApiException('رمز باید حداقل 8 کاراکتر باشد.', 422);
+        if (strlen($trimmed) < 4) {
+            throw new ApiException('رمز باید حداقل 4 کاراکتر باشد.', 422);
         }
 
         return $trimmed;

@@ -143,6 +143,47 @@ function latestOtpDebugCode(string $mobileInput, string $purpose): string
     return $code;
 }
 
+function rewriteLatestOtpCodeAndCooldown(string $mobileInput, string $purpose, string $code): void
+{
+    $mobileNormalized = \App\Support\MobileNumber::normalize($mobileInput);
+    $pdo = Database::connection();
+    $statement = $pdo->prepare(
+        'SELECT id, meta_json
+         FROM otp_verifications
+         WHERE mobile_normalized = :mobile_normalized
+           AND purpose = :purpose
+         ORDER BY id DESC
+         LIMIT 1'
+    );
+    $statement->execute([
+        'mobile_normalized' => $mobileNormalized,
+        'purpose' => $purpose,
+    ]);
+    $record = $statement->fetch();
+
+    if ($record === false) {
+        throw new RuntimeException("Missing OTP record for {$purpose}.");
+    }
+
+    $meta = json_decode((string) ($record['meta_json'] ?? ''), true);
+    $meta = is_array($meta) ? $meta : [];
+    $meta['_debugCode'] = $code;
+
+    $update = $pdo->prepare(
+        'UPDATE otp_verifications
+         SET code_hash = :code_hash,
+             resend_available_at = :resend_available_at,
+             meta_json = :meta_json
+         WHERE id = :id'
+    );
+    $update->execute([
+        'code_hash' => hash('sha256', $code),
+        'resend_available_at' => '2000-01-01 00:00:00.000000',
+        'meta_json' => json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        'id' => (int) $record['id'],
+    ]);
+}
+
 function writePng(string $path): void
 {
     $base64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9pNaGNsAAAAASUVORK5CYII=';
@@ -245,6 +286,40 @@ try {
     assert_true(($existingOtpLogin['needsProfile'] ?? true) === false, 'Existing OTP login should not require a profile step.');
     assert_true(($existingOtpLogin['user']['id'] ?? 0) === ($userOne['user']['id'] ?? -1), 'Existing OTP login should authenticate the same account.');
 
+    requestJson('POST', $baseUrl . '/api/auth/login/request-otp', $cookieOtpExisting, [
+        'json' => [
+            'mobile' => '09123456789',
+        ],
+    ]);
+    rewriteLatestOtpCodeAndCooldown('09123456789', 'login', '11111');
+    requestJson('POST', $baseUrl . '/api/auth/login/request-otp', $cookieOtpExisting, [
+        'json' => [
+            'mobile' => '09123456789',
+        ],
+    ]);
+    $latestLoginOtpCode = latestOtpDebugCode('09123456789', 'login');
+    $oldOtpLogin = requestJson('POST', $baseUrl . '/api/auth/login/verify-otp', $cookieOtpExisting, [
+        'json' => [
+            'mobile' => '09123456789',
+            'code' => '11111',
+        ],
+    ]);
+    assert_true(($oldOtpLogin['user']['id'] ?? 0) === ($userOne['user']['id'] ?? -1), 'Older unconsumed OTP should stay valid after requesting a new code.');
+    $consumedOldOtp = request('POST', $baseUrl . '/api/auth/login/verify-otp', $cookieOtpExisting, [
+        'json' => [
+            'mobile' => '09123456789',
+            'code' => '11111',
+        ],
+    ]);
+    assert_true($consumedOldOtp['status'] === 422, 'Consumed OTP should not be reusable.');
+    $latestOtpLogin = requestJson('POST', $baseUrl . '/api/auth/login/verify-otp', $cookieOtpExisting, [
+        'json' => [
+            'mobile' => '09123456789',
+            'code' => $latestLoginOtpCode,
+        ],
+    ]);
+    assert_true(($latestOtpLogin['user']['id'] ?? 0) === ($userOne['user']['id'] ?? -1), 'Newer OTP should remain valid after using an older code.');
+
     requestJson('POST', $baseUrl . '/api/auth/login/request-otp', $cookieOtpNew, [
         'json' => [
             'mobile' => '09120000002',
@@ -276,14 +351,14 @@ try {
         'json' => [
             'mobile' => '09121234567',
             'code' => $passwordResetCode,
-            'newPassword' => 'secret654',
+            'newPassword' => 'abcd',
         ],
     ]);
     assert_true(($passwordReset['passwordReset'] ?? false) === true, 'Password reset by OTP should succeed.');
     $postResetLogin = requestJson('POST', $baseUrl . '/api/auth/login', $cookieTwo, [
         'json' => [
             'mobile' => '09121234567',
-            'password' => 'secret654',
+            'password' => 'abcd',
         ],
     ]);
     assert_true(($postResetLogin['user']['id'] ?? 0) === ($userTwo['user']['id'] ?? -1), 'User should log in with the OTP-reset password.');
@@ -342,12 +417,12 @@ try {
     assert_true(($guest['user']['isGuest'] ?? false) === true, 'Guest auth should create a guest user.');
     assert_true(array_key_exists('mobileDisplay', $guest['user']) && $guest['user']['mobileDisplay'] === null, 'Guest should not expose a mobile display.');
 
-    $guestCreateRoom = request('POST', $baseUrl . '/api/room/enter', $cookieGuest, [
+    $guestCreateRoom = requestJson('POST', $baseUrl . '/api/room/enter', $cookieGuest, [
         'json' => [
             'roomCode' => '',
         ],
     ]);
-    assert_true($guestCreateRoom['status'] === 403, 'Guest should not be able to create a room.');
+    assert_true(($guestCreateRoom['room']['isCreator'] ?? false) === true, 'Guest should be able to create a room.');
 
     $guestEnter = requestJson('POST', $baseUrl . '/api/room/enter', $cookieGuest, [
         'json' => [
@@ -408,7 +483,7 @@ try {
     $guestLoginTransfer = requestJson('POST', $baseUrl . '/api/auth/login', $cookieGuestExisting, [
         'json' => [
             'mobile' => '09121234567',
-            'password' => 'secret654',
+            'password' => 'abcd',
         ],
     ]);
     assert_true(($guestLoginTransfer['user']['id'] ?? 0) === ($userTwo['user']['id'] ?? -1), 'Guest login should transfer data to the existing account.');
@@ -481,7 +556,7 @@ try {
     $passwordChange = requestJson('PATCH', $baseUrl . '/api/account/password', $cookieOne, [
         'json' => [
             'currentPassword' => 'secret123',
-            'newPassword' => 'secret999',
+            'newPassword' => 'wxyz',
         ],
     ]);
     assert_true(($passwordChange['user']['displayName'] ?? '') === 'Ali Updated', 'Password change should keep the authenticated user data.');
@@ -495,7 +570,7 @@ try {
     $postPasswordLogin = requestJson('POST', $baseUrl . '/api/auth/login', $cookieOneSecondDevice, [
         'json' => [
             'mobile' => '09123456789',
-            'password' => 'secret999',
+            'password' => 'wxyz',
         ],
     ]);
     assert_true(($postPasswordLogin['user']['displayName'] ?? '') === 'Ali Updated', 'User should be able to log in with the new password.');

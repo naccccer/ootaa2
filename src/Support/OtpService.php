@@ -47,7 +47,6 @@ class OtpService
         }
 
         $this->sms->sendVerify($mobileNormalized, $code);
-        $this->invalidateActiveRecords($mobileNormalized, $purpose, $now);
 
         $statement = $this->pdo->prepare(
             'INSERT INTO otp_verifications (
@@ -79,29 +78,28 @@ class OtpService
 
     public function verifyOtp(string $mobileNormalized, string $purpose, string $code): array
     {
-        $record = $this->requirePendingRecord($mobileNormalized, $purpose);
+        $records = $this->findPendingRecords($mobileNormalized, $purpose);
 
-        if ((int) $record['attempt_count'] >= (int) $record['max_attempts']) {
-            throw new ApiException('تعداد تلاش‌های وارد کردن کد بیش از حد مجاز است.', 429);
+        if ($records === []) {
+            throw new ApiException('برای این شماره کد فعالی پیدا نشد.', 404);
         }
 
-        if (!hash_equals((string) $record['code_hash'], hash('sha256', trim($code)))) {
-            $nextAttemptCount = (int) $record['attempt_count'] + 1;
-            $statement = $this->pdo->prepare(
-                'UPDATE otp_verifications
-                 SET attempt_count = :attempt_count,
-                     updated_at = :updated_at
-                 WHERE id = :id'
-            );
-            $statement->execute([
-                'attempt_count' => $nextAttemptCount,
-                'updated_at' => $this->now(),
-                'id' => (int) $record['id'],
-            ]);
+        $codeHash = hash('sha256', trim($code));
+        $record = null;
 
-            if ($nextAttemptCount >= (int) $record['max_attempts']) {
-                throw new ApiException('تعداد تلاش‌های وارد کردن کد بیش از حد مجاز است.', 429);
+        foreach ($records as $candidate) {
+            if (hash_equals((string) $candidate['code_hash'], $codeHash)) {
+                if ((int) $candidate['attempt_count'] >= (int) $candidate['max_attempts']) {
+                    continue;
+                }
+
+                $record = $candidate;
+                break;
             }
+        }
+
+        if ($record === null) {
+            $this->incrementAttemptCount($records[0]);
 
             throw new ApiException('کد واردشده درست نیست.', 422);
         }
@@ -126,9 +124,9 @@ class OtpService
 
     public function requireVerifiedRecord(string $mobileNormalized, string $purpose): array
     {
-        $record = $this->requirePendingRecord($mobileNormalized, $purpose);
+        $record = $this->findLatestVerifiedPendingRecord($mobileNormalized, $purpose);
 
-        if (!is_string($record['verified_at']) || $record['verified_at'] === '') {
+        if ($record === null) {
             throw new ApiException('ابتدا کد تایید را وارد کنید.', 422);
         }
 
@@ -203,21 +201,70 @@ class OtpService
         return $record === false ? null : $record;
     }
 
-    private function requirePendingRecord(string $mobileNormalized, string $purpose): array
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function findPendingRecords(string $mobileNormalized, string $purpose): array
     {
-        $record = $this->findLatestRecord($mobileNormalized, $purpose);
+        $statement = $this->pdo->prepare(
+            'SELECT *
+             FROM otp_verifications
+             WHERE mobile_normalized = :mobile_normalized
+               AND purpose = :purpose
+               AND consumed_at IS NULL
+             ORDER BY id DESC'
+        );
+        $statement->execute([
+            'mobile_normalized' => $mobileNormalized,
+            'purpose' => $purpose,
+        ]);
 
-        if ($record === null || $record['consumed_at'] !== null) {
-            throw new ApiException('برای این شماره کد فعالی پیدا نشد.', 404);
+        return $statement->fetchAll();
+    }
+
+    private function findLatestVerifiedPendingRecord(string $mobileNormalized, string $purpose): ?array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT *
+             FROM otp_verifications
+             WHERE mobile_normalized = :mobile_normalized
+               AND purpose = :purpose
+               AND consumed_at IS NULL
+               AND verified_at IS NOT NULL
+             ORDER BY id DESC
+             LIMIT 1'
+        );
+        $statement->execute([
+            'mobile_normalized' => $mobileNormalized,
+            'purpose' => $purpose,
+        ]);
+        $record = $statement->fetch();
+
+        return $record === false ? null : $record;
+    }
+
+    private function incrementAttemptCount(array $record): void
+    {
+        if ((int) $record['attempt_count'] >= (int) $record['max_attempts']) {
+            throw new ApiException('تعداد تلاش‌های وارد کردن کد بیش از حد مجاز است.', 429);
         }
 
-        $expiresAt = $this->parseDate((string) $record['expires_at']);
+        $nextAttemptCount = (int) $record['attempt_count'] + 1;
+        $statement = $this->pdo->prepare(
+            'UPDATE otp_verifications
+             SET attempt_count = :attempt_count,
+                 updated_at = :updated_at
+             WHERE id = :id'
+        );
+        $statement->execute([
+            'attempt_count' => $nextAttemptCount,
+            'updated_at' => $this->now(),
+            'id' => (int) $record['id'],
+        ]);
 
-        if ($expiresAt === null || $expiresAt <= new DateTimeImmutable('now')) {
-            throw new ApiException('کد تایید منقضی شده است.', 422);
+        if ($nextAttemptCount >= (int) $record['max_attempts']) {
+            throw new ApiException('تعداد تلاش‌های وارد کردن کد بیش از حد مجاز است.', 429);
         }
-
-        return $record;
     }
 
     private function requireRecordById(int $recordId): array
@@ -231,24 +278,6 @@ class OtpService
         }
 
         return $record;
-    }
-
-    private function invalidateActiveRecords(string $mobileNormalized, string $purpose, string $now): void
-    {
-        $statement = $this->pdo->prepare(
-            'UPDATE otp_verifications
-             SET consumed_at = :consumed_at,
-                 updated_at = :updated_at
-             WHERE mobile_normalized = :mobile_normalized
-               AND purpose = :purpose
-               AND consumed_at IS NULL'
-        );
-        $statement->execute([
-            'consumed_at' => $now,
-            'updated_at' => $now,
-            'mobile_normalized' => $mobileNormalized,
-            'purpose' => $purpose,
-        ]);
     }
 
     private function generateCode(): string

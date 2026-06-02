@@ -140,6 +140,13 @@ try {
         ));
     }
 
+    if ($route === 'room/contact' && $method === 'POST') {
+        JsonResponse::success($service->enterContactRoom(
+            Request::input('contactId'),
+            $auth->requireRegisteredUser()
+        ));
+    }
+
     if ($route === 'room/bootstrap' && $method === 'GET') {
         JsonResponse::success($service->bootstrapRoom(
             (string) Request::query('code', ''),

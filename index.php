@@ -62,7 +62,7 @@ $basePath = app_base_path();
                     <input id="registerNameInput" name="displayName" type="hidden">
                     <label class="field">
                         <span>رمز</span>
-                        <input id="registerPasswordInput" name="password" type="password" autocomplete="new-password" placeholder="حداقل 8 کاراکتر">
+                        <input id="registerPasswordInput" name="password" type="password" autocomplete="new-password" placeholder="حداقل 4 کاراکتر">
                     </label>
                     <button id="registerSubmitButton" type="submit" class="primary-button">ساخت حساب</button>
                 </form>
@@ -81,6 +81,7 @@ $basePath = app_base_path();
                     </div>
                 </label>
                 <button type="submit" id="authGuestButton" class="guest-entry-button">ورود مهمان با کد اتاق</button>
+                <button type="button" id="authGuestCreateButton" class="guest-entry-button guest-entry-button--secondary">ساخت اتاق مهمان</button>
                 <div id="authGuestStatus" class="inline-status" hidden></div>
             </form>
         </section>
@@ -96,15 +97,12 @@ $basePath = app_base_path();
                 </div>
 
                 <div class="sidebar-section">
-                    <form id="quickRoomForm" class="quick-room-form">
+                    <div id="quickRoomForm" class="quick-room-form quick-room-form--search">
                         <button type="button" id="toggleContactSearchButton" class="icon-button search-button" aria-label="جستجوی مخاطب"></button>
                         <div class="quick-room-field-stack">
-                            <input id="quickRoomCodeInput" class="quick-room-code-input" name="roomCode" type="text" inputmode="numeric" maxlength="4" pattern="\d{4}" placeholder="کد ۴ رقمی اتاق" aria-label="کد اتاق">
                             <input id="contactSearchInput" class="quick-contact-search-input" type="search" autocomplete="off" placeholder="نام یا شماره موبایل" aria-label="جستجوی مخاطب">
                         </div>
-                        <button type="submit" id="quickJoinRoomButton" class="icon-button join-button" aria-label="ورود به اتاق"></button>
-                        <button type="button" id="quickCreateRoomButton" class="icon-button add-chat-button" aria-label="اتاق جدید"></button>
-                    </form>
+                    </div>
                     <div id="contactSearchPanel" class="contact-search-panel" hidden>
                         <div id="contactSearchResults" class="contact-search-results"></div>
                     </div>
@@ -116,6 +114,20 @@ $basePath = app_base_path();
                         </div>
                     </div>
                     <div id="recentRoomsList" class="recent-rooms"></div>
+                    <form id="roomAccessForm" class="room-access-overlay">
+                        <div class="room-access-code-row">
+                            <div id="quickRoomCodeInput" class="quick-room-code-input room-code-digits" dir="ltr" aria-label="کد اتاق">
+                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit1" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم اول کد اتاق">
+                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit2" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم دوم کد اتاق">
+                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit3" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم سوم کد اتاق">
+                                <input class="quick-room-code-digit room-code-digit" name="quickRoomCodeDigit4" type="text" inputmode="numeric" maxlength="1" pattern="\d" autocomplete="off" aria-label="رقم چهارم کد اتاق">
+                            </div>
+                        </div>
+                        <div class="room-access-actions">
+                            <button type="submit" id="quickJoinRoomButton" class="guest-entry-button">ورود با کد اتاق</button>
+                            <button type="button" id="quickCreateRoomButton" class="icon-button add-chat-button room-access-create-button" aria-label="ساخت اتاق"></button>
+                        </div>
+                    </form>
                 </div>
             </aside>
 
@@ -441,7 +453,7 @@ $basePath = app_base_path();
             </label>
             <label class="field">
                 <span>رمز</span>
-                <input id="guestAuthPasswordInput" name="password" type="password" autocomplete="current-password" placeholder="حداقل 8 کاراکتر">
+                <input id="guestAuthPasswordInput" name="password" type="password" autocomplete="current-password" placeholder="حداقل 4 کاراکتر">
             </label>
             <div id="guestAuthStatus" class="inline-status" hidden></div>
             <div class="modal-card__actions">
@@ -471,7 +483,7 @@ $basePath = app_base_path();
             </label>
             <label class="field" id="authOtpPasswordField" hidden>
                 <span>رمز جدید</span>
-                <input id="authOtpPasswordInput" name="newPassword" type="password" autocomplete="new-password" placeholder="حداقل 8 کاراکتر">
+                <input id="authOtpPasswordInput" name="newPassword" type="password" autocomplete="new-password" placeholder="حداقل 4 کاراکتر">
             </label>
             <div id="authOtpStatus" class="inline-status" hidden></div>
             <div class="modal-card__actions modal-card__actions--spread">

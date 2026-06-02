@@ -36,10 +36,6 @@ class RoomService
         $userId = (int) $user['id'];
 
         if ($normalizedRoomCode === null) {
-            if (($user['kind'] ?? 'registered') === 'guest') {
-                throw new ApiException('مهمان فقط می تواند وارد اتاق موجود شود.', 403);
-            }
-
             $room = $this->createRoom($userId);
         } else {
             $room = $this->findRoomByCode($normalizedRoomCode);
@@ -54,6 +50,39 @@ class RoomService
 
         return [
             'room' => $this->serializeRoom($room, $userId),
+            'participant' => $participant,
+            'presence' => $this->presenceForRoom((int) $room['id']),
+        ];
+    }
+
+    public function enterContactRoom(mixed $contactUserId, array $user): array
+    {
+        $this->purgeExpiredRooms();
+        $viewerId = (int) $user['id'];
+        $contactId = filter_var($contactUserId, FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 1],
+        ]);
+
+        if ($contactId === false || (int) $contactId === $viewerId) {
+            throw new ApiException('مخاطب معتبر نیست.', 422);
+        }
+
+        $contact = $this->requireRegisteredUserById((int) $contactId);
+        $room = $this->findContactRoom($viewerId, (int) $contact['id']);
+
+        if ($room === null) {
+            $room = $this->createRoom($viewerId, $this->contactRoomName($user, $contact));
+        } else {
+            $this->updateRoomNameForContact((int) $room['id'], $this->contactRoomName($user, $contact));
+        }
+
+        $participant = $this->upsertParticipant((int) $room['id'], $user);
+        $this->upsertParticipant((int) $room['id'], $contact);
+        $this->touchRoom((int) $room['id']);
+        $room = $this->requireRoomById((int) $room['id']);
+
+        return [
+            'room' => $this->serializeRoom($room, $viewerId),
             'participant' => $participant,
             'presence' => $this->presenceForRoom((int) $room['id']),
         ];
@@ -403,7 +432,7 @@ class RoomService
         return count($roomIds);
     }
 
-    private function createRoom(int $creatorUserId): array
+    private function createRoom(int $creatorUserId, ?string $name = null): array
     {
         $activeCount = (int) $this->pdo->query('SELECT COUNT(*) FROM rooms')->fetchColumn();
 
@@ -439,7 +468,7 @@ class RoomService
                 );
                 $statement->execute([
                     'code' => $code,
-                    'name' => null,
+                    'name' => $name,
                     'creator_user_id' => $creatorUserId,
                     'created_at' => $now,
                     'updated_at' => $now,
@@ -1109,6 +1138,80 @@ class RoomService
         }
 
         return $room;
+    }
+
+    private function findContactRoom(int $viewerUserId, int $contactUserId): ?array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT rooms.*
+             FROM rooms
+             WHERE rooms.expires_at > :now
+               AND rooms.id IN (
+                    SELECT room_id
+                    FROM participants
+                    WHERE user_id IN (:viewer_user_id, :contact_user_id)
+                    GROUP BY room_id
+                    HAVING COUNT(DISTINCT user_id) = 2
+               )
+               AND (
+                    SELECT COUNT(DISTINCT user_id)
+                    FROM participants
+                    WHERE room_id = rooms.id
+               ) = 2
+             ORDER BY rooms.last_activity_at DESC, rooms.id DESC
+             LIMIT 1'
+        );
+        $statement->execute([
+            'viewer_user_id' => $viewerUserId,
+            'contact_user_id' => $contactUserId,
+            'now' => $this->now(),
+        ]);
+        $room = $statement->fetch();
+
+        return $room === false ? null : $room;
+    }
+
+    private function requireRegisteredUserById(int $userId): array
+    {
+        $statement = $this->pdo->prepare(
+            "SELECT *
+             FROM users
+             WHERE id = :id
+               AND kind = 'registered'
+             LIMIT 1"
+        );
+        $statement->execute(['id' => $userId]);
+        $user = $statement->fetch();
+
+        if ($user === false) {
+            throw new ApiException('مخاطب پیدا نشد.', 404);
+        }
+
+        return $user;
+    }
+
+    private function contactRoomName(array $viewer, array $contact): string
+    {
+        $name = trim((string) $contact['display_name']);
+        $maxLength = max(1, (int) app_config('app.max_room_name_length', 80));
+
+        return mb_substr($name, 0, $maxLength);
+    }
+
+    private function updateRoomNameForContact(int $roomId, string $roomName): void
+    {
+        $now = $this->now();
+        $statement = $this->pdo->prepare(
+            'UPDATE rooms
+             SET name = :name,
+                 updated_at = :updated_at
+             WHERE id = :id'
+        );
+        $statement->execute([
+            'name' => $roomName,
+            'updated_at' => $now,
+            'id' => $roomId,
+        ]);
     }
 
     private function touchRoom(int $roomId, ?string $now = null): void
